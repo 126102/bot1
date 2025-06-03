@@ -1,3 +1,24 @@
+require('dotenv').config();
+const TelegramBot = require('node-telegram-bot-api');
+const express = require('express');
+const cron = require('node-cron');
+const axios = require('axios');
+const cheerio = require('cheerio');
+const Parser = require('rss-parser');
+const _ = require('lodash');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
+const parser = new Parser();
+
+// Storage
+let googleNewsCache = [];
+let youtubeNewsCache = [];
+let twitterNewsCache = [];
+let feedlyNewsCache = [];
+let userSubscriptions = new Set();
+
 let keywords = [
   // TOP INDIAN YOUTUBERS (Most Popular)
   'CarryMinati', 'Ajey Nagar', 'Carry is Live', 'CarryMinati roast',
@@ -77,34 +98,6 @@ let keywords = [
   'trending YouTuber India', 'viral video India', 'YouTube trending India',
   'controversial YouTuber 2024', 'banned YouTuber India', 'suspended channel',
   'YouTube news India', 'creator news India', 'influencer news India'
-];require('dotenv').config();
-const TelegramBot = require('node-telegram-bot-api');
-const express = require('express');
-const cron = require('node-cron');
-const axios = require('axios');
-const cheerio = require('cheerio');
-const Parser = require('rss-parser');
-const _ = require('lodash');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
-const parser = new Parser();
-
-// Storage
-let googleNewsCache = [];
-let youtubeNewsCache = [];
-let twitterNewsCache = [];
-let feedlyNewsCache = [];
-let userSubscriptions = new Set();
-
-let keywords = [
-  'CarryMinati', 'Amit Bhadana', 'BB Ki Vines', 'Ashish Chanchlani', 
-  'Technical Guruji', 'Harsh Beniwal', 'Triggered Insaan', 'Elvish Yadav',
-  'Tanmay Bhat', 'Samay Raina', 'Flying Beast', 'Sourav Joshi',
-  'Total Gaming', 'Dynamo Gaming', 'Mortal', 'Scout', 'BeastBoyShub',
-  'Mythpat', 'Techno Gamerz', 'MostlySane', 'Slayy Point', 'Rawknee',
-  'controversy', 'drama', 'leaked', 'exposed', 'scandal', 'viral'
 ];
 
 // STRICT 24-HOUR FILTER
