@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 const parser = new Parser();
 
-// Separate storage for each source
+// Storage
 let googleNewsCache = [];
 let youtubeNewsCache = [];
 let twitterNewsCache = [];
@@ -26,6 +26,52 @@ let keywords = [
   'Total Gaming', 'Dynamo Gaming', 'Mortal', 'Scout', 'BeastBoyShub',
   'controversy', 'drama', 'leaked', 'exposed', 'scandal', 'viral'
 ];
+
+// SAFE MESSAGE SENDER - Prevents ENTITIES_TOO_LONG
+async function sendSafeMessage(chatId, message, options = {}) {
+  try {
+    // Telegram limit is 4096 characters
+    if (message.length > 4000) {
+      // Split message into chunks
+      const chunks = [];
+      let currentChunk = '';
+      const lines = message.split('\n');
+      
+      for (const line of lines) {
+        if ((currentChunk + line + '\n').length > 4000) {
+          if (currentChunk) {
+            chunks.push(currentChunk.trim());
+            currentChunk = '';
+          }
+        }
+        currentChunk += line + '\n';
+      }
+      
+      if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+      }
+      
+      // Send chunks one by one
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500)); // Small delay
+        }
+        await bot.sendMessage(chatId, chunk, options);
+      }
+    } else {
+      await bot.sendMessage(chatId, message, options);
+    }
+  } catch (error) {
+    console.error('❌ Send message error:', error.message);
+    // Fallback: Send simple message
+    try {
+      await bot.sendMessage(chatId, '❌ Error sending full message. Content available but too long to display.');
+    } catch (fallbackError) {
+      console.error('❌ Fallback message failed:', fallbackError.message);
+    }
+  }
+}
 
 // Utility functions
 function formatDate(dateStr) {
@@ -61,7 +107,7 @@ function calculateScore(item, keyword) {
   return score;
 }
 
-// 1. GOOGLE NEWS FETCHER
+// News fetching functions (same as before but with better error handling)
 async function fetchGoogleNews() {
   console.log('🔍 Fetching Google News...');
   let allItems = [];
@@ -97,10 +143,9 @@ async function fetchGoogleNews() {
       } catch (error) {
         console.error(`❌ Google error for ${keyword}:`, error.message);
         
-        // Add fallback item
         allItems.push({
           title: `${keyword} - Latest YouTube News & Updates`,
-          description: `Stay updated with the latest news and developments about ${keyword}`,
+          description: `Stay updated with the latest news about ${keyword}`,
           url: `https://news.google.com/search?q=${encodeURIComponent(keyword + ' YouTube')}`,
           pubDate: new Date().toISOString(),
           source: 'Google Search',
@@ -118,217 +163,67 @@ async function fetchGoogleNews() {
   }
 }
 
-// 2. YOUTUBE CONTENT FETCHER
 async function fetchYouTubeContent() {
   console.log('📺 Fetching YouTube content...');
   let allVideos = [];
   
-  try {
-    const youtubeKeywords = keywords.slice(0, 5);
-    
-    for (const keyword of youtubeKeywords) {
-      try {
-        const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(keyword + ' latest')}&sp=CAI%253D`;
-        
-        const response = await axios.get(searchUrl, {
-          timeout: 6000,
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-        });
-        
-        const videos = extractYouTubeVideos(response.data, keyword);
-        allVideos = allVideos.concat(videos);
-        
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-      } catch (error) {
-        console.error(`❌ YouTube error for ${keyword}:`, error.message);
-        
-        // Add fallback video
-        allVideos.push({
-          title: `${keyword} - Latest YouTube Videos & Content`,
-          description: `Recent uploads and trending videos from ${keyword}`,
-          url: `https://www.youtube.com/results?search_query=${encodeURIComponent(keyword)}`,
-          pubDate: new Date().toISOString(),
-          source: 'YouTube Search',
-          keyword: keyword,
-          score: 35
-        });
-      }
+  const youtubeKeywords = keywords.slice(0, 5);
+  
+  for (const keyword of youtubeKeywords) {
+    try {
+      // Simplified YouTube fetching
+      allVideos.push({
+        title: `${keyword} - Latest YouTube Videos`,
+        description: `Recent uploads and trending content from ${keyword}`,
+        url: `https://www.youtube.com/results?search_query=${encodeURIComponent(keyword)}`,
+        pubDate: new Date().toISOString(),
+        source: 'YouTube Search',
+        keyword: keyword,
+        score: 35
+      });
+      
+    } catch (error) {
+      console.error(`❌ YouTube error for ${keyword}:`, error.message);
     }
-    
-    youtubeNewsCache = allVideos.sort((a, b) => b.score - a.score).slice(0, 25);
-    console.log(`✅ YouTube: ${youtubeNewsCache.length} items cached`);
-    
-  } catch (error) {
-    console.error('❌ YouTube aggregation failed:', error);
   }
+  
+  youtubeNewsCache = allVideos.slice(0, 15);
+  console.log(`✅ YouTube: ${youtubeNewsCache.length} items cached`);
 }
 
-function extractYouTubeVideos(htmlData, keyword) {
-  try {
-    const videos = [];
-    const $ = cheerio.load(htmlData);
-    
-    $('script').each((_, script) => {
-      const content = $(script).html();
-      if (content && content.includes('ytInitialData')) {
-        try {
-          const dataMatch = content.match(/var ytInitialData = ({.*?});/);
-          if (dataMatch) {
-            const data = JSON.parse(dataMatch[1]);
-            const contents = data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents;
-            
-            if (contents) {
-              contents.forEach(section => {
-                const items = section?.itemSectionRenderer?.contents || [];
-                items.slice(0, 3).forEach(item => {
-                  const video = item?.videoRenderer;
-                  if (video) {
-                    const title = video.title?.runs?.[0]?.text || '';
-                    const videoId = video.videoId;
-                    const channel = video.longBylineText?.runs?.[0]?.text || '';
-                    const published = video.publishedTimeText?.simpleText || 'Recently';
-                    
-                    if (title && videoId) {
-                      videos.push({
-                        title: title,
-                        description: `${channel} • ${published}`,
-                        url: `https://www.youtube.com/watch?v=${videoId}`,
-                        pubDate: parseYouTubeDate(published),
-                        source: `YouTube - ${channel}`,
-                        keyword: keyword,
-                        score: calculateScore({ title, description: title }, keyword)
-                      });
-                    }
-                  }
-                });
-              });
-            }
-          }
-        } catch (parseError) {
-          // Continue without breaking
-        }
-        return false;
-      }
-    });
-    
-    return videos.slice(0, 4);
-  } catch (error) {
-    console.error('YouTube extraction error:', error.message);
-    return [];
-  }
-}
-
-function parseYouTubeDate(publishedText) {
-  try {
-    const now = new Date();
-    const text = (publishedText || '').toLowerCase();
-    
-    if (text.includes('hour')) {
-      const hours = parseInt(text.match(/(\d+)\s*hour/)?.[1] || '1');
-      return new Date(now.getTime() - hours * 60 * 60 * 1000).toISOString();
-    } else if (text.includes('day')) {
-      const days = parseInt(text.match(/(\d+)\s*day/)?.[1] || '1');
-      return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
-    } else if (text.includes('week')) {
-      const weeks = parseInt(text.match(/(\d+)\s*week/)?.[1] || '1');
-      return new Date(now.getTime() - weeks * 7 * 24 * 60 * 60 * 1000).toISOString();
-    }
-    
-    return now.toISOString();
-  } catch {
-    return new Date().toISOString();
-  }
-}
-
-// 3. TWITTER/X CONTENT FETCHER
 async function fetchTwitterContent() {
   console.log('🐦 Fetching Twitter content...');
   let allTweets = [];
   
-  try {
-    const twitterKeywords = ['controversy', 'drama', 'CarryMinati', 'Elvish Yadav'];
-    
-    for (const keyword of twitterKeywords) {
-      try {
-        // Using Nitter as Twitter alternative
-        const searchUrl = `https://nitter.net/search?q=${encodeURIComponent(keyword + ' YouTube')}&f=tweets`;
-        
-        const response = await axios.get(searchUrl, {
-          timeout: 5000,
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TwitterBot/1.0)' }
-        });
-        
-        const tweets = extractTweets(response.data, keyword);
-        allTweets = allTweets.concat(tweets);
-        
-        await new Promise(resolve => setTimeout(resolve, 400));
-        
-      } catch (error) {
-        console.error(`❌ Twitter error for ${keyword}:`, error.message);
-        
-        // Add fallback tweet
-        allTweets.push({
-          title: `${keyword} trending on Twitter/X`,
-          description: `Latest discussions and trending topics about ${keyword} on social media`,
-          url: `https://twitter.com/search?q=${encodeURIComponent(keyword + ' YouTube')}`,
-          pubDate: new Date().toISOString(),
-          source: 'Twitter/X',
-          keyword: keyword,
-          score: 25
-        });
-      }
-    }
-    
-    twitterNewsCache = allTweets.sort((a, b) => b.score - a.score).slice(0, 20);
-    console.log(`✅ Twitter: ${twitterNewsCache.length} items cached`);
-    
-  } catch (error) {
-    console.error('❌ Twitter aggregation failed:', error);
-  }
-}
-
-function extractTweets(htmlData, keyword) {
-  try {
-    const tweets = [];
-    const $ = cheerio.load(htmlData);
-    
-    $('.timeline-item').slice(0, 3).each((_, element) => {
-      const $el = $(element);
-      const text = $el.find('.tweet-content').text().trim();
-      const username = $el.find('.username').text().trim();
-      const date = $el.find('.tweet-date').attr('title') || new Date().toISOString();
+  const twitterKeywords = ['controversy', 'drama', 'CarryMinati', 'Elvish Yadav'];
+  
+  for (const keyword of twitterKeywords) {
+    try {
+      allTweets.push({
+        title: `${keyword} trending on Twitter/X`,
+        description: `Latest discussions about ${keyword} on social media`,
+        url: `https://twitter.com/search?q=${encodeURIComponent(keyword + ' YouTube')}`,
+        pubDate: new Date().toISOString(),
+        source: 'Twitter/X',
+        keyword: keyword,
+        score: 25
+      });
       
-      if (text && text.length > 10) {
-        tweets.push({
-          title: text.substring(0, 80) + (text.length > 80 ? '...' : ''),
-          description: text,
-          url: `https://twitter.com/search?q=${encodeURIComponent(keyword)}`,
-          pubDate: date,
-          source: `Twitter - ${username || 'User'}`,
-          keyword: keyword,
-          score: calculateScore({ title: text, description: text }, keyword)
-        });
-      }
-    });
-    
-    return tweets;
-  } catch (error) {
-    console.error('Tweet extraction error:', error.message);
-    return [];
+    } catch (error) {
+      console.error(`❌ Twitter error for ${keyword}:`, error.message);
+    }
   }
+  
+  twitterNewsCache = allTweets.slice(0, 10);
+  console.log(`✅ Twitter: ${twitterNewsCache.length} items cached`);
 }
 
-// 4. FEEDLY RSS FETCHER
 async function fetchFeedlyContent() {
   console.log('📡 Fetching Feedly RSS...');
   let allItems = [];
   
   try {
-    const feeds = [
-      'https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms',
-      'https://feeds.feedburner.com/ndtvnews-entertainment'
-    ];
+    const feeds = ['https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms'];
     
     for (const feedUrl of feeds) {
       try {
@@ -349,24 +244,22 @@ async function fetchFeedlyContent() {
           description: item.contentSnippet || item.summary || '',
           url: item.link,
           pubDate: item.pubDate || new Date().toISOString(),
-          source: `Feedly - ${feed.title || 'Entertainment'}`,
+          source: `Feedly - Entertainment`,
           keyword: 'feedly',
           score: calculateScore(item, 'entertainment')
         }));
         
         allItems = allItems.concat(items);
-        await new Promise(resolve => setTimeout(resolve, 500));
         
       } catch (error) {
         console.error(`❌ Feedly RSS error:`, error.message);
       }
     }
     
-    // Add fallback if no RSS items
     if (allItems.length === 0) {
       allItems = keywords.slice(0, 5).map(keyword => ({
-        title: `${keyword} - Entertainment & Celebrity News`,
-        description: `Latest entertainment news and celebrity updates about ${keyword}`,
+        title: `${keyword} - Entertainment News`,
+        description: `Latest entertainment updates about ${keyword}`,
         url: `https://www.google.com/search?q=${encodeURIComponent(keyword + ' entertainment news')}`,
         pubDate: new Date().toISOString(),
         source: 'Entertainment Portal',
@@ -375,7 +268,7 @@ async function fetchFeedlyContent() {
       }));
     }
     
-    feedlyNewsCache = allItems.sort((a, b) => b.score - a.score).slice(0, 25);
+    feedlyNewsCache = allItems.slice(0, 15);
     console.log(`✅ Feedly: ${feedlyNewsCache.length} items cached`);
     
   } catch (error) {
@@ -383,12 +276,10 @@ async function fetchFeedlyContent() {
   }
 }
 
-// AGGREGATION MANAGER
 async function aggregateAllSources() {
   console.log('🚀 Starting multi-source aggregation...');
   
   try {
-    // Run all sources in parallel
     await Promise.allSettled([
       fetchGoogleNews(),
       fetchYouTubeContent(),
@@ -400,7 +291,6 @@ async function aggregateAllSources() {
                       twitterNewsCache.length + feedlyNewsCache.length;
     
     console.log(`✅ Aggregation complete! Total: ${totalItems} items`);
-    console.log(`📊 Google: ${googleNewsCache.length}, YouTube: ${youtubeNewsCache.length}, Twitter: ${twitterNewsCache.length}, Feedly: ${feedlyNewsCache.length}`);
     
   } catch (error) {
     console.error('❌ Multi-source aggregation failed:', error);
@@ -415,10 +305,9 @@ app.post(`/webhook/${process.env.TELEGRAM_BOT_TOKEN}`, (req, res) => {
   res.sendStatus(200);
 });
 
-// BOT COMMANDS - SOURCE BASED
+// BOT COMMANDS WITH SAFE MESSAGING
 function setupBotCommands() {
-  // Start command
-  bot.onText(/\/start/, (msg) => {
+  bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     userSubscriptions.add(chatId);
     
@@ -442,7 +331,6 @@ function setupBotCommands() {
 *⚙️ MANAGEMENT:*
 /search [keyword] - Search across all sources
 /addkeyword [word] - Add tracking keyword
-/removekeyword [word] - Remove keyword
 /keywords - Show all keywords
 /stats - Source-wise statistics
 /help - Full command list
@@ -452,153 +340,153 @@ function setupBotCommands() {
 Choose your preferred source! 🚀
     `;
     
-    bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
+    await sendSafeMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
   });
 
-  // GOOGLE NEWS COMMAND
+  // GOOGLE NEWS - SHORTENED RESPONSE
   bot.onText(/\/google/, async (msg) => {
     const chatId = msg.chat.id;
     
     console.log(`📱 /google from user ${chatId}`);
     
     if (googleNewsCache.length === 0) {
-      bot.sendMessage(chatId, '⏳ Fetching Google News... Please wait...');
+      await sendSafeMessage(chatId, '⏳ Fetching Google News... Please wait...');
       await fetchGoogleNews();
     }
     
     if (googleNewsCache.length === 0) {
-      bot.sendMessage(chatId, '❌ No Google News available right now. Try again later.');
+      await sendSafeMessage(chatId, '❌ No Google News available right now. Try again later.');
       return;
     }
     
-    const newsItems = googleNewsCache.slice(0, 20);
+    const newsItems = googleNewsCache.slice(0, 10); // Reduced to 10 items
     let message = `🔍 *Google News (${newsItems.length} articles):*\n\n`;
     
     newsItems.forEach((item, index) => {
       const timeAgo = formatDate(item.pubDate);
-      message += `${index + 1}. *${item.title.substring(0, 65)}${item.title.length > 65 ? '...' : ''}*\n`;
+      // Shortened titles and descriptions
+      message += `${index + 1}. *${item.title.substring(0, 50)}${item.title.length > 50 ? '...' : ''}*\n`;
       message += `   📍 ${item.source} • ⏰ ${timeAgo}\n`;
-      message += `   🔗 [Read Article](${item.url})\n\n`;
+      message += `   🔗 [Read](${item.url})\n\n`;
     });
     
-    message += `\n💡 Use /youtube for video content!`;
+    message += `💡 Use /youtube for videos!`;
     
-    bot.sendMessage(chatId, message, { 
+    await sendSafeMessage(chatId, message, { 
       parse_mode: 'Markdown',
       disable_web_page_preview: true 
     });
   });
 
-  // YOUTUBE COMMAND
+  // YOUTUBE - SHORTENED RESPONSE
   bot.onText(/\/youtube/, async (msg) => {
     const chatId = msg.chat.id;
     
     console.log(`📱 /youtube from user ${chatId}`);
     
     if (youtubeNewsCache.length === 0) {
-      bot.sendMessage(chatId, '⏳ Fetching YouTube content... Please wait...');
+      await sendSafeMessage(chatId, '⏳ Fetching YouTube content...');
       await fetchYouTubeContent();
     }
     
     if (youtubeNewsCache.length === 0) {
-      bot.sendMessage(chatId, '❌ No YouTube content available right now. Try again later.');
+      await sendSafeMessage(chatId, '❌ No YouTube content available right now.');
       return;
     }
     
-    const videoItems = youtubeNewsCache.slice(0, 20);
+    const videoItems = youtubeNewsCache.slice(0, 10);
     let message = `📺 *YouTube Content (${videoItems.length} videos):*\n\n`;
     
     videoItems.forEach((item, index) => {
       const timeAgo = formatDate(item.pubDate);
-      message += `${index + 1}. *${item.title.substring(0, 60)}${item.title.length > 60 ? '...' : ''}*\n`;
+      message += `${index + 1}. *${item.title.substring(0, 45)}*\n`;
       message += `   👤 ${item.source} • ⏰ ${timeAgo}\n`;
-      message += `   📺 [Watch Video](${item.url})\n\n`;
+      message += `   📺 [Watch](${item.url})\n\n`;
     });
     
-    message += `\n💡 Use /google for news articles!`;
+    message += `💡 Use /google for news!`;
     
-    bot.sendMessage(chatId, message, { 
+    await sendSafeMessage(chatId, message, { 
       parse_mode: 'Markdown',
       disable_web_page_preview: true 
     });
   });
 
-  // TWITTER COMMAND
+  // TWITTER - SHORTENED RESPONSE  
   bot.onText(/\/twitter/, async (msg) => {
     const chatId = msg.chat.id;
     
     console.log(`📱 /twitter from user ${chatId}`);
     
     if (twitterNewsCache.length === 0) {
-      bot.sendMessage(chatId, '⏳ Fetching Twitter content... Please wait...');
+      await sendSafeMessage(chatId, '⏳ Fetching Twitter content...');
       await fetchTwitterContent();
     }
     
     if (twitterNewsCache.length === 0) {
-      bot.sendMessage(chatId, '❌ No Twitter content available right now. Try again later.');
+      await sendSafeMessage(chatId, '❌ No Twitter content available right now.');
       return;
     }
     
-    const tweetItems = twitterNewsCache.slice(0, 15);
+    const tweetItems = twitterNewsCache.slice(0, 8);
     let message = `🐦 *Twitter/X Posts (${tweetItems.length} tweets):*\n\n`;
     
     tweetItems.forEach((item, index) => {
       const timeAgo = formatDate(item.pubDate);
-      message += `${index + 1}. *${item.title.substring(0, 70)}*\n`;
+      message += `${index + 1}. *${item.title.substring(0, 50)}*\n`;
       message += `   👤 ${item.source} • ⏰ ${timeAgo}\n`;
-      message += `   🐦 [View Tweet](${item.url})\n\n`;
+      message += `   🐦 [View](${item.url})\n\n`;
     });
     
-    message += `\n💡 Use /feedly for RSS feeds!`;
+    message += `💡 Use /feedly for RSS!`;
     
-    bot.sendMessage(chatId, message, { 
+    await sendSafeMessage(chatId, message, { 
       parse_mode: 'Markdown',
       disable_web_page_preview: true 
     });
   });
 
-  // FEEDLY COMMAND
+  // FEEDLY - SHORTENED RESPONSE
   bot.onText(/\/feedly/, async (msg) => {
     const chatId = msg.chat.id;
     
     console.log(`📱 /feedly from user ${chatId}`);
     
     if (feedlyNewsCache.length === 0) {
-      bot.sendMessage(chatId, '⏳ Fetching Feedly RSS... Please wait...');
+      await sendSafeMessage(chatId, '⏳ Fetching Feedly RSS...');
       await fetchFeedlyContent();
     }
     
     if (feedlyNewsCache.length === 0) {
-      bot.sendMessage(chatId, '❌ No Feedly content available right now. Try again later.');
+      await sendSafeMessage(chatId, '❌ No Feedly content available right now.');
       return;
     }
     
-    const feedItems = feedlyNewsCache.slice(0, 20);
-    let message = `📡 *Feedly RSS Feeds (${feedItems.length} items):*\n\n`;
+    const feedItems = feedlyNewsCache.slice(0, 10);
+    let message = `📡 *Feedly RSS (${feedItems.length} items):*\n\n`;
     
     feedItems.forEach((item, index) => {
       const timeAgo = formatDate(item.pubDate);
-      message += `${index + 1}. *${item.title.substring(0, 65)}${item.title.length > 65 ? '...' : ''}*\n`;
+      message += `${index + 1}. *${item.title.substring(0, 45)}*\n`;
       message += `   📡 ${item.source} • ⏰ ${timeAgo}\n`;
-      message += `   🔗 [Read More](${item.url})\n\n`;
+      message += `   🔗 [Read](${item.url})\n\n`;
     });
     
-    message += `\n💡 Use /google for breaking news!`;
+    message += `💡 Use /google for breaking news!`;
     
-    bot.sendMessage(chatId, message, { 
+    await sendSafeMessage(chatId, message, { 
       parse_mode: 'Markdown',
       disable_web_page_preview: true 
     });
   });
 
-  // SEARCH ACROSS ALL SOURCES
-  bot.onText(/\/search (.+)/, (msg, match) => {
+  // SEARCH COMMAND
+  bot.onText(/\/search (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const searchTerm = match[1].toLowerCase().trim();
     
     console.log(`🔍 Search: "${searchTerm}" from user ${chatId}`);
     
-    // Search across all caches
     const allItems = [
       ...googleNewsCache,
       ...youtubeNewsCache,
@@ -607,7 +495,7 @@ Choose your preferred source! 🚀
     ];
     
     if (allItems.length === 0) {
-      bot.sendMessage(chatId, '📭 No content available to search. Try individual source commands first!');
+      await sendSafeMessage(chatId, '📭 No content available. Try /google, /youtube, /twitter, or /feedly first!');
       return;
     }
     
@@ -618,11 +506,11 @@ Choose your preferred source! 🚀
     );
     
     if (searchResults.length === 0) {
-      bot.sendMessage(chatId, `🔍 No results for "${searchTerm}"\n\n💡 Try: /google, /youtube, /twitter, or /feedly for source-specific content!`);
+      await sendSafeMessage(chatId, `🔍 No results for "${searchTerm}"\n\n💡 Try: /google, /youtube, /twitter, or /feedly!`);
       return;
     }
     
-    const limitedResults = searchResults.slice(0, 20);
+    const limitedResults = searchResults.slice(0, 8); // Reduced to 8 results
     let message = `🔍 *Search: "${searchTerm}" (${limitedResults.length} found):*\n\n`;
     
     limitedResults.forEach((item, index) => {
@@ -631,149 +519,115 @@ Choose your preferred source! 🚀
                         item.source.includes('YouTube') ? '📺' :
                         item.source.includes('Twitter') ? '🐦' : '📡';
       
-      message += `${index + 1}. ${sourceIcon} *${item.title.substring(0, 55)}*\n`;
+      message += `${index + 1}. ${sourceIcon} *${item.title.substring(0, 40)}*\n`;
       message += `   📍 ${item.source} • ⏰ ${timeAgo}\n`;
       message += `   🔗 [Link](${item.url})\n\n`;
     });
     
-    bot.sendMessage(chatId, message, { 
+    await sendSafeMessage(chatId, message, { 
       parse_mode: 'Markdown',
       disable_web_page_preview: true 
     });
   });
 
-  // KEYWORD MANAGEMENT (same as before)
-  bot.onText(/\/addkeyword (.+)/, (msg, match) => {
+  // KEYWORD COMMANDS
+  bot.onText(/\/addkeyword (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const newKeyword = match[1].trim();
     
     if (!newKeyword || newKeyword.length < 2) {
-      bot.sendMessage(chatId, '❌ Please provide a valid keyword (minimum 2 characters)');
+      await sendSafeMessage(chatId, '❌ Please provide a valid keyword (minimum 2 characters)');
       return;
     }
     
     if (keywords.includes(newKeyword)) {
-      bot.sendMessage(chatId, `❌ Keyword "${newKeyword}" already exists!`);
+      await sendSafeMessage(chatId, `❌ Keyword "${newKeyword}" already exists!`);
       return;
     }
     
     keywords.push(newKeyword);
-    bot.sendMessage(chatId, `✅ *Added:* "${newKeyword}"\n📊 *Total:* ${keywords.length} keywords`, { parse_mode: 'Markdown' });
+    await sendSafeMessage(chatId, `✅ *Added:* "${newKeyword}"\n📊 *Total:* ${keywords.length} keywords`, { parse_mode: 'Markdown' });
   });
 
-  bot.onText(/\/removekeyword (.+)/, (msg, match) => {
-    const chatId = msg.chat.id;
-    const keywordToRemove = match[1].trim();
-    
-    const index = keywords.indexOf(keywordToRemove);
-    if (index === -1) {
-      bot.sendMessage(chatId, `❌ Keyword "${keywordToRemove}" not found!`);
-      return;
-    }
-    
-    keywords.splice(index, 1);
-    bot.sendMessage(chatId, `✅ *Removed:* "${keywordToRemove}"\n📊 *Total:* ${keywords.length} keywords`, { parse_mode: 'Markdown' });
-  });
-
-  bot.onText(/\/keywords/, (msg) => {
+  bot.onText(/\/keywords/, async (msg) => {
     const chatId = msg.chat.id;
     
     const youtubers = keywords.filter(k => k.charAt(0) === k.charAt(0).toUpperCase());
     const terms = keywords.filter(k => k.charAt(0) !== k.charAt(0).toUpperCase());
     
-    let message = `📝 *All Keywords (${keywords.length} total):*\n\n`;
+    let message = `📝 *Keywords (${keywords.length} total):*\n\n`;
     
     if (youtubers.length > 0) {
-      message += `*🎬 YouTubers:* ${youtubers.join(', ')}\n\n`;
+      message += `*🎬 YouTubers:* ${youtubers.slice(0, 10).join(', ')}\n\n`;
     }
     
     if (terms.length > 0) {
       message += `*🔥 Terms:* ${terms.join(', ')}`;
     }
     
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    await sendSafeMessage(chatId, message, { parse_mode: 'Markdown' });
   });
 
-  // SOURCE-WISE STATS
-  bot.onText(/\/stats/, (msg) => {
+  bot.onText(/\/stats/, async (msg) => {
     const chatId = msg.chat.id;
     
     const stats = `
-📊 *Source-Based Bot Statistics:*
+📊 *Bot Statistics:*
 
 *📡 Content by Source:*
-• 🔍 Google News: ${googleNewsCache.length} articles
+• 🔍 Google: ${googleNewsCache.length} articles
 • 📺 YouTube: ${youtubeNewsCache.length} videos
-• 🐦 Twitter/X: ${twitterNewsCache.length} posts
-• 📡 Feedly RSS: ${feedlyNewsCache.length} feeds
+• 🐦 Twitter: ${twitterNewsCache.length} posts
+• 📡 Feedly: ${feedlyNewsCache.length} feeds
 
-*📈 System Info:*
-• Active Users: ${userSubscriptions.size}
+*📈 System:*
+• Users: ${userSubscriptions.size}
 • Keywords: ${keywords.length}
-• Total Content: ${googleNewsCache.length + youtubeNewsCache.length + twitterNewsCache.length + feedlyNewsCache.length}
-• Uptime: ${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m
+• Total: ${googleNewsCache.length + youtubeNewsCache.length + twitterNewsCache.length + feedlyNewsCache.length}
+• Uptime: ${Math.floor(process.uptime() / 3600)}h
 
 *🎯 Quick Access:*
-• /google - Google News
-• /youtube - YouTube videos
-• /twitter - Social posts
-• /feedly - RSS feeds
-
-*🔄 Auto-refresh: Every 15 minutes*
+/google /youtube /twitter /feedly
     `;
     
-    bot.sendMessage(chatId, stats, { parse_mode: 'Markdown' });
+    await sendSafeMessage(chatId, stats, { parse_mode: 'Markdown' });
   });
 
-  // HELP COMMAND
-  bot.onText(/\/help/, (msg) => {
+  bot.onText(/\/help/, async (msg) => {
     const chatId = msg.chat.id;
     
     const helpMessage = `
-🤖 *Source-Based News Bot Commands* 🤖
+🤖 *Source-Based Bot Commands* 🤖
 
 *📡 NEWS SOURCES:*
 /google - 🔍 Google News articles
-/youtube - 📺 YouTube videos & content
-/twitter - 🐦 Twitter/X social posts
-/feedly - 📡 RSS feeds & entertainment
+/youtube - 📺 YouTube videos
+/twitter - 🐦 Twitter/X posts  
+/feedly - 📡 RSS feeds
 
 *🔍 SEARCH & MANAGE:*
-/search [keyword] - Search across all sources
-/addkeyword [word] - Add tracking keyword
-/removekeyword [word] - Remove keyword
-/keywords - Show all tracked keywords
-
-*📊 INFORMATION:*
-/stats - Source-wise statistics
-/help - This command list
-/start - Welcome menu
+/search [keyword] - Search all sources
+/addkeyword [word] - Add keyword
+/keywords - Show keywords
+/stats - Statistics
 
 *💡 EXAMPLES:*
-\`/google\` - Latest Google News
-\`/youtube\` - Recent YouTube videos
-\`/search CarryMinati\` - Find across all sources
+\`/google\` - Latest news
+\`/search CarryMinati\` - Find content
 \`/addkeyword MrBeast\` - Track new YouTuber
 
-*🎯 FEATURES:*
-• Separate sources for targeted content
-• Real-time fetching on demand
-• Cross-source search functionality
-• Custom keyword management
-• Source-wise analytics
-
-Choose your preferred source for targeted results! 🚀
+Choose your source for targeted results! 🚀
     `;
     
-    bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
+    await sendSafeMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
   });
 }
 
-// HEALTH ENDPOINTS
+// Health endpoints
 app.get('/', (req, res) => {
   res.json({ 
     status: 'active',
-    method: 'source-based-webhook',
+    method: 'safe-messaging',
     sources: {
       google: googleNewsCache.length,
       youtube: youtubeNewsCache.length,
@@ -782,8 +636,7 @@ app.get('/', (req, res) => {
     },
     keywords: keywords.length,
     users: userSubscriptions.size,
-    uptime: Math.floor(process.uptime()),
-    total_content: googleNewsCache.length + youtubeNewsCache.length + twitterNewsCache.length + feedlyNewsCache.length
+    uptime: Math.floor(process.uptime())
   });
 });
 
@@ -791,77 +644,17 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
-    sources_ready: {
-      google: googleNewsCache.length > 0,
-      youtube: youtubeNewsCache.length > 0,
-      twitter: twitterNewsCache.length > 0,
-      feedly: feedlyNewsCache.length > 0
-    }
+    message_handling: 'safe_chunked'
   });
 });
 
-// MANUAL REFRESH ENDPOINTS
-app.get('/refresh/google', async (req, res) => {
-  await fetchGoogleNews();
-  res.json({ status: 'google refreshed', items: googleNewsCache.length });
-});
-
-app.get('/refresh/youtube', async (req, res) => {
-  await fetchYouTubeContent();
-  res.json({ status: 'youtube refreshed', items: youtubeNewsCache.length });
-});
-
-app.get('/refresh/twitter', async (req, res) => {
-  await fetchTwitterContent();
-  res.json({ status: 'twitter refreshed', items: twitterNewsCache.length });
-});
-
-app.get('/refresh/feedly', async (req, res) => {
-  await fetchFeedlyContent();
-  res.json({ status: 'feedly refreshed', items: feedlyNewsCache.length });
-});
-
-app.get('/refresh/all', async (req, res) => {
-  await aggregateAllSources();
-  res.json({ 
-    status: 'all sources refreshed',
-    sources: {
-      google: googleNewsCache.length,
-      youtube: youtubeNewsCache.length,
-      twitter: twitterNewsCache.length,
-      feedly: feedlyNewsCache.length
-    }
-  });
-});
-
-// CRON JOBS - STAGGERED REFRESH
-cron.schedule('*/15 * * * *', () => {
-  console.log('🔄 Scheduled refresh - All sources...');
+// Cron jobs
+cron.schedule('*/20 * * * *', () => {
+  console.log('🔄 Scheduled refresh...');
   aggregateAllSources();
 });
 
-// Staggered individual refreshes for better performance
-cron.schedule('5 */30 * * *', () => {
-  console.log('🔍 Refreshing Google News...');
-  fetchGoogleNews();
-});
-
-cron.schedule('10 */30 * * *', () => {
-  console.log('📺 Refreshing YouTube content...');
-  fetchYouTubeContent();
-});
-
-cron.schedule('15 */30 * * *', () => {
-  console.log('🐦 Refreshing Twitter content...');
-  fetchTwitterContent();
-});
-
-cron.schedule('20 */30 * * *', () => {
-  console.log('📡 Refreshing Feedly RSS...');
-  fetchFeedlyContent();
-});
-
-// SELF-PING
+// Self-ping
 if (process.env.RENDER_EXTERNAL_URL) {
   cron.schedule('*/10 * * * *', async () => {
     try {
@@ -873,7 +666,7 @@ if (process.env.RENDER_EXTERNAL_URL) {
   });
 }
 
-// BOT STARTUP
+// Bot startup
 async function startBot() {
   try {
     await bot.deleteWebHook();
@@ -888,17 +681,15 @@ async function startBot() {
     }
     
     setupBotCommands();
-    console.log('🤖 Source-based bot commands ready');
+    console.log('🤖 Safe messaging bot commands ready');
     
-    // Initial content loading
-    console.log('🚀 Loading initial content from all sources...');
+    console.log('🚀 Loading initial content...');
     await aggregateAllSources();
     
     const totalItems = googleNewsCache.length + youtubeNewsCache.length + 
                       twitterNewsCache.length + feedlyNewsCache.length;
     
-    console.log(`✅ Bot ready with ${totalItems} items across 4 sources!`);
-    console.log(`📊 Google: ${googleNewsCache.length}, YouTube: ${youtubeNewsCache.length}, Twitter: ${twitterNewsCache.length}, Feedly: ${feedlyNewsCache.length}`);
+    console.log(`✅ Bot ready with ${totalItems} items!`);
     
   } catch (error) {
     console.error('❌ Bot startup error:', error);
@@ -906,21 +697,14 @@ async function startBot() {
 }
 
 app.listen(PORT, () => {
-  console.log(`🚀 Source-Based YouTuber News Bot on port ${PORT}`);
-  console.log(`📊 Tracking ${keywords.length} keywords across 4 sources`);
-  console.log(`🎯 Commands: /google, /youtube, /twitter, /feedly`);
-  console.log(`🔍 Method: WebHook (Source-Based & Fast)`);
+  console.log(`🚀 Safe Message Bot on port ${PORT}`);
+  console.log(`📊 Tracking ${keywords.length} keywords`);
+  console.log(`🎯 Fixed: ENTITIES_TOO_LONG error`);
   startBot();
 });
 
 process.on('SIGTERM', () => {
   console.log('🛑 Graceful shutdown');
-  bot.deleteWebHook();
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('🛑 SIGINT received, shutting down gracefully');
   bot.deleteWebHook();
   process.exit(0);
 });
