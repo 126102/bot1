@@ -1,24 +1,3 @@
-require('dotenv').config();
-const TelegramBot = require('node-telegram-bot-api');
-const express = require('express');
-const cron = require('node-cron');
-const axios = require('axios');
-const cheerio = require('cheerio');
-const Parser = require('rss-parser');
-const _ = require('lodash');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
-const parser = new Parser();
-
-// Storage
-let googleNewsCache = [];
-let youtubeNewsCache = [];
-let twitterNewsCache = [];
-let feedlyNewsCache = [];
-let userSubscriptions = new Set();
-
 let keywords = [
   // TOP INDIAN YOUTUBERS (Most Popular)
   'CarryMinati', 'Ajey Nagar', 'Carry is Live', 'CarryMinati roast',
