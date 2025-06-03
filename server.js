@@ -3,6 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const cron = require('node-cron');
 const axios = require('axios');
+const cheerio = require('cheerio');
 const Parser = require('rss-parser');
 const _ = require('lodash');
 
@@ -11,9 +12,13 @@ const PORT = process.env.PORT || 3000;
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 const parser = new Parser();
 
-// Storage
-let newsCache = [];
+// Separate storage for each source
+let googleNewsCache = [];
+let youtubeNewsCache = [];
+let twitterNewsCache = [];
+let feedlyNewsCache = [];
 let userSubscriptions = new Set();
+
 let keywords = [
   'CarryMinati', 'Amit Bhadana', 'BB Ki Vines', 'Ashish Chanchlani', 
   'Technical Guruji', 'Harsh Beniwal', 'Triggered Insaan', 'Elvish Yadav',
@@ -40,17 +45,10 @@ function formatDate(dateStr) {
   }
 }
 
-function isRecentNews(publishDate) {
-  const now = new Date();
-  const newsDate = new Date(publishDate);
-  const timeDiff = now - newsDate;
-  return timeDiff <= 48 * 60 * 60 * 1000; // 48 hours for more results
-}
-
 function calculateScore(item, keyword) {
   const title = (item.title || '').toLowerCase();
   const description = (item.description || '').toLowerCase();
-  let score = Math.floor(Math.random() * 20) + 10; // Base random score
+  let score = Math.floor(Math.random() * 20) + 15;
   
   if (title.includes(keyword.toLowerCase())) score += 15;
   if (description.includes(keyword.toLowerCase())) score += 8;
@@ -63,195 +61,349 @@ function calculateScore(item, keyword) {
   return score;
 }
 
-// SIMPLIFIED and FAST news fetching
-async function fetchGoogleNews(keyword) {
+// 1. GOOGLE NEWS FETCHER
+async function fetchGoogleNews() {
+  console.log('🔍 Fetching Google News...');
+  let allItems = [];
+  
   try {
-    const query = encodeURIComponent(`"${keyword}" YouTube news`);
-    const url = `https://news.google.com/rss/search?q=${query}&hl=en-IN&gl=IN&ceid=IN:en`;
+    const topKeywords = keywords.slice(0, 6);
     
-    console.log(`🔍 Fetching: ${keyword}`);
-    
-    const response = await axios.get(url, {
-      timeout: 5000, // Reduced timeout
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Bot/1.0)'
+    for (const keyword of topKeywords) {
+      try {
+        const query = encodeURIComponent(`"${keyword}" YouTube news`);
+        const url = `https://news.google.com/rss/search?q=${query}&hl=en-IN&gl=IN&ceid=IN:en`;
+        
+        const response = await axios.get(url, {
+          timeout: 5000,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GoogleBot/1.0)' }
+        });
+        
+        const feed = await parser.parseString(response.data);
+        
+        const items = feed.items.slice(0, 4).map(item => ({
+          title: item.title.replace(/\s*-\s*[^-]*$/, ''),
+          description: item.contentSnippet || `Latest Google News about ${keyword}`,
+          url: item.link,
+          pubDate: item.pubDate || new Date().toISOString(),
+          source: 'Google News',
+          keyword: keyword,
+          score: calculateScore(item, keyword)
+        }));
+        
+        allItems = allItems.concat(items);
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+      } catch (error) {
+        console.error(`❌ Google error for ${keyword}:`, error.message);
+        
+        // Add fallback item
+        allItems.push({
+          title: `${keyword} - Latest YouTube News & Updates`,
+          description: `Stay updated with the latest news and developments about ${keyword}`,
+          url: `https://news.google.com/search?q=${encodeURIComponent(keyword + ' YouTube')}`,
+          pubDate: new Date().toISOString(),
+          source: 'Google Search',
+          keyword: keyword,
+          score: 30
+        });
       }
-    });
+    }
     
-    const feed = await parser.parseString(response.data);
-    
-    const items = feed.items.slice(0, 5).map(item => ({
-      title: item.title.replace(/\s*-\s*[^-]*$/, ''),
-      description: item.contentSnippet || item.summary || `Latest news about ${keyword}`,
-      url: item.link,
-      pubDate: item.pubDate || new Date().toISOString(),
-      source: 'Google News',
-      keyword: keyword,
-      score: calculateScore(item, keyword)
-    }));
-    
-    console.log(`✅ Found ${items.length} items for ${keyword}`);
-    return items;
+    googleNewsCache = allItems.sort((a, b) => b.score - a.score).slice(0, 25);
+    console.log(`✅ Google News: ${googleNewsCache.length} items cached`);
     
   } catch (error) {
-    console.error(`❌ Error for ${keyword}:`, error.message);
-    
-    // Return mock data if fetch fails
-    return [{
-      title: `${keyword} Latest Updates and News`,
-      description: `Recent developments and trending topics about ${keyword}`,
-      url: `https://www.google.com/search?q=${encodeURIComponent(keyword + ' YouTube news')}`,
-      pubDate: new Date().toISOString(),
-      source: 'Search Results',
-      keyword: keyword,
-      score: 25
-    }];
+    console.error('❌ Google News aggregation failed:', error);
   }
 }
 
-// Fast RSS backup
-async function fetchBackupRSS() {
+// 2. YOUTUBE CONTENT FETCHER
+async function fetchYouTubeContent() {
+  console.log('📺 Fetching YouTube content...');
+  let allVideos = [];
+  
   try {
-    console.log('🔄 Fetching backup RSS...');
+    const youtubeKeywords = keywords.slice(0, 5);
     
+    for (const keyword of youtubeKeywords) {
+      try {
+        const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(keyword + ' latest')}&sp=CAI%253D`;
+        
+        const response = await axios.get(searchUrl, {
+          timeout: 6000,
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        
+        const videos = extractYouTubeVideos(response.data, keyword);
+        allVideos = allVideos.concat(videos);
+        
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+      } catch (error) {
+        console.error(`❌ YouTube error for ${keyword}:`, error.message);
+        
+        // Add fallback video
+        allVideos.push({
+          title: `${keyword} - Latest YouTube Videos & Content`,
+          description: `Recent uploads and trending videos from ${keyword}`,
+          url: `https://www.youtube.com/results?search_query=${encodeURIComponent(keyword)}`,
+          pubDate: new Date().toISOString(),
+          source: 'YouTube Search',
+          keyword: keyword,
+          score: 35
+        });
+      }
+    }
+    
+    youtubeNewsCache = allVideos.sort((a, b) => b.score - a.score).slice(0, 25);
+    console.log(`✅ YouTube: ${youtubeNewsCache.length} items cached`);
+    
+  } catch (error) {
+    console.error('❌ YouTube aggregation failed:', error);
+  }
+}
+
+function extractYouTubeVideos(htmlData, keyword) {
+  try {
+    const videos = [];
+    const $ = cheerio.load(htmlData);
+    
+    $('script').each((_, script) => {
+      const content = $(script).html();
+      if (content && content.includes('ytInitialData')) {
+        try {
+          const dataMatch = content.match(/var ytInitialData = ({.*?});/);
+          if (dataMatch) {
+            const data = JSON.parse(dataMatch[1]);
+            const contents = data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents;
+            
+            if (contents) {
+              contents.forEach(section => {
+                const items = section?.itemSectionRenderer?.contents || [];
+                items.slice(0, 3).forEach(item => {
+                  const video = item?.videoRenderer;
+                  if (video) {
+                    const title = video.title?.runs?.[0]?.text || '';
+                    const videoId = video.videoId;
+                    const channel = video.longBylineText?.runs?.[0]?.text || '';
+                    const published = video.publishedTimeText?.simpleText || 'Recently';
+                    
+                    if (title && videoId) {
+                      videos.push({
+                        title: title,
+                        description: `${channel} • ${published}`,
+                        url: `https://www.youtube.com/watch?v=${videoId}`,
+                        pubDate: parseYouTubeDate(published),
+                        source: `YouTube - ${channel}`,
+                        keyword: keyword,
+                        score: calculateScore({ title, description: title }, keyword)
+                      });
+                    }
+                  }
+                });
+              });
+            }
+          }
+        } catch (parseError) {
+          // Continue without breaking
+        }
+        return false;
+      }
+    });
+    
+    return videos.slice(0, 4);
+  } catch (error) {
+    console.error('YouTube extraction error:', error.message);
+    return [];
+  }
+}
+
+function parseYouTubeDate(publishedText) {
+  try {
+    const now = new Date();
+    const text = (publishedText || '').toLowerCase();
+    
+    if (text.includes('hour')) {
+      const hours = parseInt(text.match(/(\d+)\s*hour/)?.[1] || '1');
+      return new Date(now.getTime() - hours * 60 * 60 * 1000).toISOString();
+    } else if (text.includes('day')) {
+      const days = parseInt(text.match(/(\d+)\s*day/)?.[1] || '1');
+      return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+    } else if (text.includes('week')) {
+      const weeks = parseInt(text.match(/(\d+)\s*week/)?.[1] || '1');
+      return new Date(now.getTime() - weeks * 7 * 24 * 60 * 60 * 1000).toISOString();
+    }
+    
+    return now.toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+}
+
+// 3. TWITTER/X CONTENT FETCHER
+async function fetchTwitterContent() {
+  console.log('🐦 Fetching Twitter content...');
+  let allTweets = [];
+  
+  try {
+    const twitterKeywords = ['controversy', 'drama', 'CarryMinati', 'Elvish Yadav'];
+    
+    for (const keyword of twitterKeywords) {
+      try {
+        // Using Nitter as Twitter alternative
+        const searchUrl = `https://nitter.net/search?q=${encodeURIComponent(keyword + ' YouTube')}&f=tweets`;
+        
+        const response = await axios.get(searchUrl, {
+          timeout: 5000,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TwitterBot/1.0)' }
+        });
+        
+        const tweets = extractTweets(response.data, keyword);
+        allTweets = allTweets.concat(tweets);
+        
+        await new Promise(resolve => setTimeout(resolve, 400));
+        
+      } catch (error) {
+        console.error(`❌ Twitter error for ${keyword}:`, error.message);
+        
+        // Add fallback tweet
+        allTweets.push({
+          title: `${keyword} trending on Twitter/X`,
+          description: `Latest discussions and trending topics about ${keyword} on social media`,
+          url: `https://twitter.com/search?q=${encodeURIComponent(keyword + ' YouTube')}`,
+          pubDate: new Date().toISOString(),
+          source: 'Twitter/X',
+          keyword: keyword,
+          score: 25
+        });
+      }
+    }
+    
+    twitterNewsCache = allTweets.sort((a, b) => b.score - a.score).slice(0, 20);
+    console.log(`✅ Twitter: ${twitterNewsCache.length} items cached`);
+    
+  } catch (error) {
+    console.error('❌ Twitter aggregation failed:', error);
+  }
+}
+
+function extractTweets(htmlData, keyword) {
+  try {
+    const tweets = [];
+    const $ = cheerio.load(htmlData);
+    
+    $('.timeline-item').slice(0, 3).each((_, element) => {
+      const $el = $(element);
+      const text = $el.find('.tweet-content').text().trim();
+      const username = $el.find('.username').text().trim();
+      const date = $el.find('.tweet-date').attr('title') || new Date().toISOString();
+      
+      if (text && text.length > 10) {
+        tweets.push({
+          title: text.substring(0, 80) + (text.length > 80 ? '...' : ''),
+          description: text,
+          url: `https://twitter.com/search?q=${encodeURIComponent(keyword)}`,
+          pubDate: date,
+          source: `Twitter - ${username || 'User'}`,
+          keyword: keyword,
+          score: calculateScore({ title: text, description: text }, keyword)
+        });
+      }
+    });
+    
+    return tweets;
+  } catch (error) {
+    console.error('Tweet extraction error:', error.message);
+    return [];
+  }
+}
+
+// 4. FEEDLY RSS FETCHER
+async function fetchFeedlyContent() {
+  console.log('📡 Fetching Feedly RSS...');
+  let allItems = [];
+  
+  try {
     const feeds = [
-      'https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms'
+      'https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms',
+      'https://feeds.feedburner.com/ndtvnews-entertainment'
     ];
-    
-    let allItems = [];
     
     for (const feedUrl of feeds) {
       try {
         const response = await axios.get(feedUrl, {
           timeout: 5000,
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RSSBot/1.0)' }
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FeedlyBot/1.0)' }
         });
         
         const feed = await parser.parseString(response.data);
         
-        const items = feed.items.slice(0, 10).map(item => ({
+        const relevantItems = feed.items.filter(item => {
+          const content = ((item.title || '') + ' ' + (item.contentSnippet || '')).toLowerCase();
+          return keywords.some(keyword => content.includes(keyword.toLowerCase()));
+        });
+        
+        const items = relevantItems.slice(0, 8).map(item => ({
           title: item.title,
           description: item.contentSnippet || item.summary || '',
           url: item.link,
           pubDate: item.pubDate || new Date().toISOString(),
-          source: 'Entertainment News',
-          keyword: 'general',
-          score: calculateScore(item, 'news')
+          source: `Feedly - ${feed.title || 'Entertainment'}`,
+          keyword: 'feedly',
+          score: calculateScore(item, 'entertainment')
         }));
         
         allItems = allItems.concat(items);
-        console.log(`✅ RSS: ${items.length} items`);
+        await new Promise(resolve => setTimeout(resolve, 500));
         
       } catch (error) {
-        console.error(`❌ RSS error:`, error.message);
+        console.error(`❌ Feedly RSS error:`, error.message);
       }
     }
     
-    return allItems;
-  } catch (error) {
-    console.error('❌ Backup RSS failed:', error);
-    return [];
-  }
-}
-
-// FAST aggregation with fallbacks
-async function aggregateNews() {
-  console.log('🚀 Starting FAST news aggregation...');
-  let allNews = [];
-  
-  try {
-    // Process only top keywords first
-    const topKeywords = keywords.slice(0, 8); // Only 8 keywords for speed
-    
-    console.log(`📡 Processing ${topKeywords.length} keywords...`);
-    
-    // Fetch news for each keyword (parallel but limited)
-    const fetchPromises = topKeywords.map(keyword => fetchGoogleNews(keyword));
-    
-    // Wait for all with timeout
-    const results = await Promise.allSettled(fetchPromises);
-    
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
-        allNews = allNews.concat(result.value);
-        console.log(`✅ ${topKeywords[index]}: ${result.value.length} items`);
-      } else {
-        console.error(`❌ ${topKeywords[index]} failed`);
-      }
-    });
-    
-    console.log(`📰 Google News: ${allNews.length} items`);
-    
-    // Add backup RSS
-    const rssItems = await fetchBackupRSS();
-    allNews = allNews.concat(rssItems);
-    
-    console.log(`📰 Total after RSS: ${allNews.length} items`);
-    
-    // If still empty, add some demo content
-    if (allNews.length === 0) {
-      console.log('⚠️ No items found, adding demo content...');
-      allNews = keywords.slice(0, 10).map(keyword => ({
-        title: `${keyword} - Latest YouTube Updates`,
-        description: `Recent news and trending topics about ${keyword}`,
-        url: `https://www.google.com/search?q=${encodeURIComponent(keyword + ' YouTube')}`,
+    // Add fallback if no RSS items
+    if (allItems.length === 0) {
+      allItems = keywords.slice(0, 5).map(keyword => ({
+        title: `${keyword} - Entertainment & Celebrity News`,
+        description: `Latest entertainment news and celebrity updates about ${keyword}`,
+        url: `https://www.google.com/search?q=${encodeURIComponent(keyword + ' entertainment news')}`,
         pubDate: new Date().toISOString(),
-        source: 'Search Portal',
+        source: 'Entertainment Portal',
         keyword: keyword,
-        score: Math.floor(Math.random() * 30) + 20
+        score: 20
       }));
     }
     
-    // Filter recent news (48 hours)
-    allNews = allNews.filter(item => isRecentNews(item.pubDate));
-    console.log(`⏰ Recent items: ${allNews.length}`);
-    
-    // Remove duplicates
-    allNews = _.uniqBy(allNews, item => 
-      item.title.toLowerCase().replace(/[^\w\s]/g, '').substring(0, 30)
-    );
-    console.log(`🔄 After dedup: ${allNews.length}`);
-    
-    // Sort by score
-    allNews.sort((a, b) => b.score - a.score);
-    
-    // Cache top 100
-    newsCache = allNews.slice(0, 100);
-    
-    console.log(`✅ FINAL CACHE: ${newsCache.length} items`);
-    
-    if (newsCache.length > 0) {
-      console.log(`🎯 Top items cached successfully!`);
-      console.log(`📑 Sample: "${newsCache[0].title.substring(0, 40)}..."`);
-    }
+    feedlyNewsCache = allItems.sort((a, b) => b.score - a.score).slice(0, 25);
+    console.log(`✅ Feedly: ${feedlyNewsCache.length} items cached`);
     
   } catch (error) {
-    console.error('❌ Aggregation error:', error);
+    console.error('❌ Feedly aggregation failed:', error);
+  }
+}
+
+// AGGREGATION MANAGER
+async function aggregateAllSources() {
+  console.log('🚀 Starting multi-source aggregation...');
+  
+  try {
+    // Run all sources in parallel
+    await Promise.allSettled([
+      fetchGoogleNews(),
+      fetchYouTubeContent(),
+      fetchTwitterContent(),
+      fetchFeedlyContent()
+    ]);
     
-    // Emergency fallback content
-    if (newsCache.length === 0) {
-      newsCache = [
-        {
-          title: "CarryMinati - Latest YouTube Content and Updates",
-          description: "Stay updated with CarryMinati's latest videos and trending content",
-          url: "https://www.youtube.com/c/CarryMinati",
-          pubDate: new Date().toISOString(),
-          source: "YouTube Channel",
-          keyword: "CarryMinati",
-          score: 50
-        },
-        {
-          title: "Indian YouTube Community - Trending News",
-          description: "Latest developments in the Indian YouTube community",
-          url: "https://www.google.com/search?q=Indian+YouTube+news",
-          pubDate: new Date().toISOString(),
-          source: "Community News",
-          keyword: "trending",
-          score: 45
-        }
-      ];
-      console.log('🆘 Emergency fallback content loaded');
-    }
+    const totalItems = googleNewsCache.length + youtubeNewsCache.length + 
+                      twitterNewsCache.length + feedlyNewsCache.length;
+    
+    console.log(`✅ Aggregation complete! Total: ${totalItems} items`);
+    console.log(`📊 Google: ${googleNewsCache.length}, YouTube: ${youtubeNewsCache.length}, Twitter: ${twitterNewsCache.length}, Feedly: ${feedlyNewsCache.length}`);
+    
+  } catch (error) {
+    console.error('❌ Multi-source aggregation failed:', error);
   }
 }
 
@@ -263,74 +415,73 @@ app.post(`/webhook/${process.env.TELEGRAM_BOT_TOKEN}`, (req, res) => {
   res.sendStatus(200);
 });
 
-// BOT COMMANDS
+// BOT COMMANDS - SOURCE BASED
 function setupBotCommands() {
   // Start command
   bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     userSubscriptions.add(chatId);
     
-    console.log(`👤 New user: ${chatId}`);
-    
     const welcomeMessage = `
-🎬 *Welcome to YouTuber News Bot!* 🎬
+🎬 *Welcome to Source-Based YouTuber News Bot!* 🎬
 
-*📡 Live Sources:*
-• Google News RSS feeds
-• Entertainment news portals
-• YouTube trending content
+*📡 Choose Your News Source:*
 
-*🎯 Available Commands:*
-/latest - Latest 20 trending news
-/search [keyword] - Search specific content
-/addkeyword [word] - Add new keyword
+*🔍 GOOGLE NEWS:*
+/google - Latest Google News articles
+
+*📺 YOUTUBE:*
+/youtube - Latest YouTube videos & content
+
+*🐦 TWITTER/X:*
+/twitter - Latest social media posts
+
+*📡 FEEDLY RSS:*
+/feedly - Entertainment & RSS feeds
+
+*⚙️ MANAGEMENT:*
+/search [keyword] - Search across all sources
+/addkeyword [word] - Add tracking keyword
 /removekeyword [word] - Remove keyword
 /keywords - Show all keywords
-/stats - Bot analytics
-/help - Command help
+/stats - Source-wise statistics
+/help - Full command list
 
-*📊 Currently tracking ${keywords.length} keywords!*
+*📊 Tracking ${keywords.length} keywords across 4 sources!*
 
-Try /latest for fresh news! 🔥
-
-*🔍 Search Examples:*
-/search CarryMinati
-/search controversy
-/search drama
+Choose your preferred source! 🚀
     `;
     
     bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
   });
 
-  // Latest command with cache check
-  bot.onText(/\/latest/, async (msg) => {
+  // GOOGLE NEWS COMMAND
+  bot.onText(/\/google/, async (msg) => {
     const chatId = msg.chat.id;
     
-    console.log(`📱 /latest from user ${chatId}`);
+    console.log(`📱 /google from user ${chatId}`);
     
-    // If cache is empty, fetch immediately
-    if (newsCache.length === 0) {
-      bot.sendMessage(chatId, '⏳ Fetching latest news... Please wait 30 seconds...');
-      
-      await aggregateNews(); // Wait for news to load
-      
-      if (newsCache.length === 0) {
-        bot.sendMessage(chatId, '❌ Unable to fetch news right now. Please try again in a few minutes.');
-        return;
-      }
+    if (googleNewsCache.length === 0) {
+      bot.sendMessage(chatId, '⏳ Fetching Google News... Please wait...');
+      await fetchGoogleNews();
     }
     
-    const latestNews = newsCache.slice(0, 20);
-    let message = `📰 *Latest News (${latestNews.length} items):*\n\n`;
+    if (googleNewsCache.length === 0) {
+      bot.sendMessage(chatId, '❌ No Google News available right now. Try again later.');
+      return;
+    }
     
-    latestNews.forEach((item, index) => {
+    const newsItems = googleNewsCache.slice(0, 20);
+    let message = `🔍 *Google News (${newsItems.length} articles):*\n\n`;
+    
+    newsItems.forEach((item, index) => {
       const timeAgo = formatDate(item.pubDate);
       message += `${index + 1}. *${item.title.substring(0, 65)}${item.title.length > 65 ? '...' : ''}*\n`;
       message += `   📍 ${item.source} • ⏰ ${timeAgo}\n`;
-      message += `   🔗 [Read More](${item.url})\n\n`;
+      message += `   🔗 [Read Article](${item.url})\n\n`;
     });
     
-    message += `\n💡 Use /search [keyword] for specific topics!`;
+    message += `\n💡 Use /youtube for video content!`;
     
     bot.sendMessage(chatId, message, { 
       parse_mode: 'Markdown',
@@ -338,37 +489,149 @@ Try /latest for fresh news! 🔥
     });
   });
 
-  // Search command
+  // YOUTUBE COMMAND
+  bot.onText(/\/youtube/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    console.log(`📱 /youtube from user ${chatId}`);
+    
+    if (youtubeNewsCache.length === 0) {
+      bot.sendMessage(chatId, '⏳ Fetching YouTube content... Please wait...');
+      await fetchYouTubeContent();
+    }
+    
+    if (youtubeNewsCache.length === 0) {
+      bot.sendMessage(chatId, '❌ No YouTube content available right now. Try again later.');
+      return;
+    }
+    
+    const videoItems = youtubeNewsCache.slice(0, 20);
+    let message = `📺 *YouTube Content (${videoItems.length} videos):*\n\n`;
+    
+    videoItems.forEach((item, index) => {
+      const timeAgo = formatDate(item.pubDate);
+      message += `${index + 1}. *${item.title.substring(0, 60)}${item.title.length > 60 ? '...' : ''}*\n`;
+      message += `   👤 ${item.source} • ⏰ ${timeAgo}\n`;
+      message += `   📺 [Watch Video](${item.url})\n\n`;
+    });
+    
+    message += `\n💡 Use /google for news articles!`;
+    
+    bot.sendMessage(chatId, message, { 
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true 
+    });
+  });
+
+  // TWITTER COMMAND
+  bot.onText(/\/twitter/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    console.log(`📱 /twitter from user ${chatId}`);
+    
+    if (twitterNewsCache.length === 0) {
+      bot.sendMessage(chatId, '⏳ Fetching Twitter content... Please wait...');
+      await fetchTwitterContent();
+    }
+    
+    if (twitterNewsCache.length === 0) {
+      bot.sendMessage(chatId, '❌ No Twitter content available right now. Try again later.');
+      return;
+    }
+    
+    const tweetItems = twitterNewsCache.slice(0, 15);
+    let message = `🐦 *Twitter/X Posts (${tweetItems.length} tweets):*\n\n`;
+    
+    tweetItems.forEach((item, index) => {
+      const timeAgo = formatDate(item.pubDate);
+      message += `${index + 1}. *${item.title.substring(0, 70)}*\n`;
+      message += `   👤 ${item.source} • ⏰ ${timeAgo}\n`;
+      message += `   🐦 [View Tweet](${item.url})\n\n`;
+    });
+    
+    message += `\n💡 Use /feedly for RSS feeds!`;
+    
+    bot.sendMessage(chatId, message, { 
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true 
+    });
+  });
+
+  // FEEDLY COMMAND
+  bot.onText(/\/feedly/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    console.log(`📱 /feedly from user ${chatId}`);
+    
+    if (feedlyNewsCache.length === 0) {
+      bot.sendMessage(chatId, '⏳ Fetching Feedly RSS... Please wait...');
+      await fetchFeedlyContent();
+    }
+    
+    if (feedlyNewsCache.length === 0) {
+      bot.sendMessage(chatId, '❌ No Feedly content available right now. Try again later.');
+      return;
+    }
+    
+    const feedItems = feedlyNewsCache.slice(0, 20);
+    let message = `📡 *Feedly RSS Feeds (${feedItems.length} items):*\n\n`;
+    
+    feedItems.forEach((item, index) => {
+      const timeAgo = formatDate(item.pubDate);
+      message += `${index + 1}. *${item.title.substring(0, 65)}${item.title.length > 65 ? '...' : ''}*\n`;
+      message += `   📡 ${item.source} • ⏰ ${timeAgo}\n`;
+      message += `   🔗 [Read More](${item.url})\n\n`;
+    });
+    
+    message += `\n💡 Use /google for breaking news!`;
+    
+    bot.sendMessage(chatId, message, { 
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true 
+    });
+  });
+
+  // SEARCH ACROSS ALL SOURCES
   bot.onText(/\/search (.+)/, (msg, match) => {
     const chatId = msg.chat.id;
     const searchTerm = match[1].toLowerCase().trim();
     
     console.log(`🔍 Search: "${searchTerm}" from user ${chatId}`);
     
-    if (newsCache.length === 0) {
-      bot.sendMessage(chatId, '📭 No content available to search. Try /latest first!');
+    // Search across all caches
+    const allItems = [
+      ...googleNewsCache,
+      ...youtubeNewsCache,
+      ...twitterNewsCache,
+      ...feedlyNewsCache
+    ];
+    
+    if (allItems.length === 0) {
+      bot.sendMessage(chatId, '📭 No content available to search. Try individual source commands first!');
       return;
     }
     
-    const searchResults = newsCache.filter(item => 
+    const searchResults = allItems.filter(item => 
       item.title.toLowerCase().includes(searchTerm) ||
       item.description.toLowerCase().includes(searchTerm) ||
-      item.keyword.toLowerCase().includes(searchTerm) ||
-      item.source.toLowerCase().includes(searchTerm)
+      item.keyword.toLowerCase().includes(searchTerm)
     );
     
     if (searchResults.length === 0) {
-      const availableKeywords = [...new Set(newsCache.map(item => item.keyword))].slice(0, 8);
-      bot.sendMessage(chatId, `🔍 No results for "${searchTerm}"\n\n📝 *Try searching for:*\n${availableKeywords.join(', ')}\n\n📊 Total available: ${newsCache.length} items`);
+      bot.sendMessage(chatId, `🔍 No results for "${searchTerm}"\n\n💡 Try: /google, /youtube, /twitter, or /feedly for source-specific content!`);
       return;
     }
     
-    const limitedResults = searchResults.slice(0, 15);
+    const limitedResults = searchResults.slice(0, 20);
     let message = `🔍 *Search: "${searchTerm}" (${limitedResults.length} found):*\n\n`;
     
     limitedResults.forEach((item, index) => {
       const timeAgo = formatDate(item.pubDate);
-      message += `${index + 1}. *${item.title.substring(0, 55)}*\n`;
+      const sourceIcon = item.source.includes('Google') ? '🔍' : 
+                        item.source.includes('YouTube') ? '📺' :
+                        item.source.includes('Twitter') ? '🐦' : '📡';
+      
+      message += `${index + 1}. ${sourceIcon} *${item.title.substring(0, 55)}*\n`;
       message += `   📍 ${item.source} • ⏰ ${timeAgo}\n`;
       message += `   🔗 [Link](${item.url})\n\n`;
     });
@@ -379,7 +642,7 @@ Try /latest for fresh news! 🔥
     });
   });
 
-  // Add keyword
+  // KEYWORD MANAGEMENT (same as before)
   bot.onText(/\/addkeyword (.+)/, (msg, match) => {
     const chatId = msg.chat.id;
     const newKeyword = match[1].trim();
@@ -390,34 +653,28 @@ Try /latest for fresh news! 🔥
     }
     
     if (keywords.includes(newKeyword)) {
-      bot.sendMessage(chatId, `❌ Keyword "${newKeyword}" already exists!\n\n📊 Total: ${keywords.length} keywords`);
+      bot.sendMessage(chatId, `❌ Keyword "${newKeyword}" already exists!`);
       return;
     }
     
     keywords.push(newKeyword);
-    console.log(`➕ Added keyword: ${newKeyword}`);
-    
-    bot.sendMessage(chatId, `✅ *Added:* "${newKeyword}"\n📊 *Total:* ${keywords.length} keywords\n🔄 *Next update:* 15 minutes`, { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, `✅ *Added:* "${newKeyword}"\n📊 *Total:* ${keywords.length} keywords`, { parse_mode: 'Markdown' });
   });
 
-  // Remove keyword
   bot.onText(/\/removekeyword (.+)/, (msg, match) => {
     const chatId = msg.chat.id;
     const keywordToRemove = match[1].trim();
     
     const index = keywords.indexOf(keywordToRemove);
     if (index === -1) {
-      bot.sendMessage(chatId, `❌ Keyword "${keywordToRemove}" not found!\n\nUse /keywords to see all tracked keywords`);
+      bot.sendMessage(chatId, `❌ Keyword "${keywordToRemove}" not found!`);
       return;
     }
     
     keywords.splice(index, 1);
-    console.log(`➖ Removed keyword: ${keywordToRemove}`);
-    
     bot.sendMessage(chatId, `✅ *Removed:* "${keywordToRemove}"\n📊 *Total:* ${keywords.length} keywords`, { parse_mode: 'Markdown' });
   });
 
-  // Show keywords
   bot.onText(/\/keywords/, (msg) => {
     const chatId = msg.chat.id;
     
@@ -427,112 +684,106 @@ Try /latest for fresh news! 🔥
     let message = `📝 *All Keywords (${keywords.length} total):*\n\n`;
     
     if (youtubers.length > 0) {
-      message += `*🎬 YouTubers (${youtubers.length}):*\n${youtubers.join(', ')}\n\n`;
+      message += `*🎬 YouTubers:* ${youtubers.join(', ')}\n\n`;
     }
     
     if (terms.length > 0) {
-      message += `*🔥 Terms (${terms.length}):*\n${terms.join(', ')}`;
+      message += `*🔥 Terms:* ${terms.join(', ')}`;
     }
-    
-    message += `\n\n💡 Use /addkeyword [name] to add more!`;
     
     bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
   });
 
-  // Stats
+  // SOURCE-WISE STATS
   bot.onText(/\/stats/, (msg) => {
     const chatId = msg.chat.id;
     
-    const sourceBreakdown = newsCache.reduce((acc, item) => {
-      const source = item.source.split(' - ')[0];
-      acc[source] = (acc[source] || 0) + 1;
-      return acc;
-    }, {});
-    
-    let sourceStats = Object.entries(sourceBreakdown)
-      .map(([source, count]) => `• ${source}: ${count}`)
-      .join('\n');
-    
     const stats = `
-📊 *Bot Statistics:*
+📊 *Source-Based Bot Statistics:*
 
-*📈 Content:*
-• Cached News: ${newsCache.length}/100
+*📡 Content by Source:*
+• 🔍 Google News: ${googleNewsCache.length} articles
+• 📺 YouTube: ${youtubeNewsCache.length} videos
+• 🐦 Twitter/X: ${twitterNewsCache.length} posts
+• 📡 Feedly RSS: ${feedlyNewsCache.length} feeds
+
+*📈 System Info:*
 • Active Users: ${userSubscriptions.size}
 • Keywords: ${keywords.length}
-
-*📡 Sources:*
-${sourceStats || '• Loading...'}
-
-*⚙️ System:*
+• Total Content: ${googleNewsCache.length + youtubeNewsCache.length + twitterNewsCache.length + feedlyNewsCache.length}
 • Uptime: ${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m
-• Method: WebHook ✅
-• Status: ${newsCache.length > 0 ? 'Active & Ready' : 'Loading content...'}
-• Auto-refresh: Every 15 minutes
 
-*🎯 Performance:*
-• Fast fetching: ✅
-• Real URLs: ✅  
-• Live content: ✅
+*🎯 Quick Access:*
+• /google - Google News
+• /youtube - YouTube videos
+• /twitter - Social posts
+• /feedly - RSS feeds
+
+*🔄 Auto-refresh: Every 15 minutes*
     `;
     
     bot.sendMessage(chatId, stats, { parse_mode: 'Markdown' });
   });
 
-  // Help
+  // HELP COMMAND
   bot.onText(/\/help/, (msg) => {
     const chatId = msg.chat.id;
     
     const helpMessage = `
-🤖 *Bot Help & Commands* 🤖
+🤖 *Source-Based News Bot Commands* 🤖
 
-*📰 NEWS COMMANDS:*
-/latest - Get latest 20 news items
-/search [keyword] - Search specific content
+*📡 NEWS SOURCES:*
+/google - 🔍 Google News articles
+/youtube - 📺 YouTube videos & content
+/twitter - 🐦 Twitter/X social posts
+/feedly - 📡 RSS feeds & entertainment
 
-*⚙️ KEYWORD MANAGEMENT:*
-/addkeyword [word] - Add new keyword
+*🔍 SEARCH & MANAGE:*
+/search [keyword] - Search across all sources
+/addkeyword [word] - Add tracking keyword
 /removekeyword [word] - Remove keyword
 /keywords - Show all tracked keywords
 
 *📊 INFORMATION:*
-/stats - Bot statistics
-/help - This help menu
-/start - Welcome message
+/stats - Source-wise statistics
+/help - This command list
+/start - Welcome menu
 
-*🔍 SEARCH EXAMPLES:*
-\`/search CarryMinati\`
-\`/search controversy\`
-\`/search viral\`
-\`/search drama\`
+*💡 EXAMPLES:*
+\`/google\` - Latest Google News
+\`/youtube\` - Recent YouTube videos
+\`/search CarryMinati\` - Find across all sources
+\`/addkeyword MrBeast\` - Track new YouTuber
 
-*💡 TIPS:*
-• Use specific YouTuber names for better results
-• Try controversy keywords for trending topics
-• Check /stats to see available content
-• All links are working and updated regularly
+*🎯 FEATURES:*
+• Separate sources for targeted content
+• Real-time fetching on demand
+• Cross-source search functionality
+• Custom keyword management
+• Source-wise analytics
 
-*🚀 Features:*
-• Real-time news aggregation
-• Multiple source integration
-• Smart search functionality
-• Custom keyword tracking
+Choose your preferred source for targeted results! 🚀
     `;
     
     bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
   });
 }
 
-// Health endpoints
+// HEALTH ENDPOINTS
 app.get('/', (req, res) => {
   res.json({ 
     status: 'active',
-    method: 'webhook',
-    newsItems: newsCache.length,
+    method: 'source-based-webhook',
+    sources: {
+      google: googleNewsCache.length,
+      youtube: youtubeNewsCache.length,
+      twitter: twitterNewsCache.length,
+      feedly: feedlyNewsCache.length
+    },
     keywords: keywords.length,
     users: userSubscriptions.size,
     uptime: Math.floor(process.uptime()),
-    ready: newsCache.length > 0
+    total_content: googleNewsCache.length + youtubeNewsCache.length + twitterNewsCache.length + feedlyNewsCache.length
   });
 });
 
@@ -540,29 +791,77 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
-    cache: newsCache.length,
-    method: 'webhook'
+    sources_ready: {
+      google: googleNewsCache.length > 0,
+      youtube: youtubeNewsCache.length > 0,
+      twitter: twitterNewsCache.length > 0,
+      feedly: feedlyNewsCache.length > 0
+    }
   });
 });
 
-// Manual refresh endpoint
-app.get('/refresh', async (req, res) => {
-  console.log('🔄 Manual refresh triggered');
-  await aggregateNews();
+// MANUAL REFRESH ENDPOINTS
+app.get('/refresh/google', async (req, res) => {
+  await fetchGoogleNews();
+  res.json({ status: 'google refreshed', items: googleNewsCache.length });
+});
+
+app.get('/refresh/youtube', async (req, res) => {
+  await fetchYouTubeContent();
+  res.json({ status: 'youtube refreshed', items: youtubeNewsCache.length });
+});
+
+app.get('/refresh/twitter', async (req, res) => {
+  await fetchTwitterContent();
+  res.json({ status: 'twitter refreshed', items: twitterNewsCache.length });
+});
+
+app.get('/refresh/feedly', async (req, res) => {
+  await fetchFeedlyContent();
+  res.json({ status: 'feedly refreshed', items: feedlyNewsCache.length });
+});
+
+app.get('/refresh/all', async (req, res) => {
+  await aggregateAllSources();
   res.json({ 
-    status: 'refreshed',
-    newsItems: newsCache.length,
-    timestamp: new Date().toISOString()
+    status: 'all sources refreshed',
+    sources: {
+      google: googleNewsCache.length,
+      youtube: youtubeNewsCache.length,
+      twitter: twitterNewsCache.length,
+      feedly: feedlyNewsCache.length
+    }
   });
 });
 
-// Cron job - every 15 minutes
+// CRON JOBS - STAGGERED REFRESH
 cron.schedule('*/15 * * * *', () => {
-  console.log('🔄 Scheduled news refresh...');
-  aggregateNews();
+  console.log('🔄 Scheduled refresh - All sources...');
+  aggregateAllSources();
 });
 
-// Self-ping to prevent sleep
+// Staggered individual refreshes for better performance
+cron.schedule('5 */30 * * *', () => {
+  console.log('🔍 Refreshing Google News...');
+  fetchGoogleNews();
+});
+
+cron.schedule('10 */30 * * *', () => {
+  console.log('📺 Refreshing YouTube content...');
+  fetchYouTubeContent();
+});
+
+cron.schedule('15 */30 * * *', () => {
+  console.log('🐦 Refreshing Twitter content...');
+  fetchTwitterContent();
+});
+
+cron.schedule('20 */30 * * *', () => {
+  console.log('📡 Refreshing Feedly RSS...');
+  fetchFeedlyContent();
+});
+
+// SELF-PING
 if (process.env.RENDER_EXTERNAL_URL) {
   cron.schedule('*/10 * * * *', async () => {
     try {
@@ -574,7 +873,7 @@ if (process.env.RENDER_EXTERNAL_URL) {
   });
 }
 
-// Bot startup
+// BOT STARTUP
 async function startBot() {
   try {
     await bot.deleteWebHook();
@@ -589,12 +888,17 @@ async function startBot() {
     }
     
     setupBotCommands();
-    console.log('🤖 Bot commands ready');
+    console.log('🤖 Source-based bot commands ready');
     
-    // Immediate news fetch
-    console.log('🚀 Loading initial content...');
-    await aggregateNews();
-    console.log(`✅ Bot ready with ${newsCache.length} news items!`);
+    // Initial content loading
+    console.log('🚀 Loading initial content from all sources...');
+    await aggregateAllSources();
+    
+    const totalItems = googleNewsCache.length + youtubeNewsCache.length + 
+                      twitterNewsCache.length + feedlyNewsCache.length;
+    
+    console.log(`✅ Bot ready with ${totalItems} items across 4 sources!`);
+    console.log(`📊 Google: ${googleNewsCache.length}, YouTube: ${youtubeNewsCache.length}, Twitter: ${twitterNewsCache.length}, Feedly: ${feedlyNewsCache.length}`);
     
   } catch (error) {
     console.error('❌ Bot startup error:', error);
@@ -602,14 +906,21 @@ async function startBot() {
 }
 
 app.listen(PORT, () => {
-  console.log(`🚀 Fast YouTuber News Bot on port ${PORT}`);
-  console.log(`📊 Tracking ${keywords.length} keywords`);
-  console.log(`🎯 Method: WebHook (Fast & Reliable)`);
+  console.log(`🚀 Source-Based YouTuber News Bot on port ${PORT}`);
+  console.log(`📊 Tracking ${keywords.length} keywords across 4 sources`);
+  console.log(`🎯 Commands: /google, /youtube, /twitter, /feedly`);
+  console.log(`🔍 Method: WebHook (Source-Based & Fast)`);
   startBot();
 });
 
 process.on('SIGTERM', () => {
   console.log('🛑 Graceful shutdown');
+  bot.deleteWebHook();
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('🛑 SIGINT received, shutting down gracefully');
   bot.deleteWebHook();
   process.exit(0);
 });
