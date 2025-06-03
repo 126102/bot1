@@ -15,6 +15,9 @@ build/
 .npm
 .nyc_output
 coverage/
+.cache/
+.vscode/
+*.pid
 
 # ================================
 
