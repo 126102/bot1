@@ -1,7 +1,7 @@
 {
-  "name": "real-youtuber-news-bot",
-  "version": "3.0.0",
-  "description": "Real working Telegram bot for Indian YouTuber news with actual sources",
+  "name": "complete-youtuber-news-bot",
+  "version": "4.0.0",
+  "description": "Complete working Telegram bot for Indian YouTuber news with all commands",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -25,7 +25,7 @@
     "bot",
     "youtuber",
     "news",
-    "real-time",
-    "indian"
+    "complete",
+    "working"
   ]
 }
