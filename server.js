@@ -447,6 +447,9 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(express.json());
 
+// Global ping counter
+let pingCount = 0;
+
 // Get the app URL from environment or construct it
 const APP_URL = process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com` || `http://localhost:${PORT}`;
 
