@@ -157,77 +157,110 @@ async function sendSafeMessage(chatId, message, options = {}) {
   }
 }
 
-// 1. ACTUAL WORKING NEWS SCRAPING
+// 1. TARGETED YOUTUBER NEWS ONLY
 async function fetchGoogleNews() {
-  console.log('🔍 Fetching ACTUAL YouTube News...');
+  console.log('🔍 Fetching ONLY YouTuber-specific news...');
   let allNews = [];
   
   try {
-    // REAL WORKING NEWS SOURCES
-    const newsSources = [
-      'https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms', // TOI Entertainment
-      'https://feeds.feedburner.com/ndtvnews-entertainment', // NDTV Entertainment
-      'https://www.hindustantimes.com/feeds/rss/entertainment/rssfeed.xml', // HT Entertainment
-      'https://economictimes.indiatimes.com/tech/rssfeeds/13357270.cms', // ET Tech
-      'https://www.news18.com/rss/tech.xml' // News18 Tech
+    // DIRECT GOOGLE NEWS SEARCH FOR YOUTUBERS ONLY
+    const youtuberSearches = [
+      'CarryMinati OR "Ajey Nagar" OR "Carry Minati"',
+      'Elvish Yadav OR "Elvish Yadav controversy"',
+      'Triggered Insaan OR "Nischay Malhan"',
+      'Tanmay Bhat OR "Tanmay Bhat comedy"',
+      'Ashish Chanchlani OR "Ashish Chanchlani vlogs"',
+      'BB Ki Vines OR "Bhuvan Bam"',
+      'Technical Guruji OR "Gaurav Chaudhary"',
+      'Flying Beast OR "Gaurav Taneja"',
+      'Sourav Joshi OR "Sourav Joshi vlogs"',
+      'Beer Biceps OR "Ranveer Allahbadia"'
     ];
     
-    for (const feedUrl of newsSources) {
+    for (const searchQuery of youtuberSearches) {
       try {
-        console.log(`Fetching: ${feedUrl.split('.com')[1] || feedUrl.split('.')[1]}`);
+        const googleUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(searchQuery)}&hl=en-IN&gl=IN&ceid=IN:en`;
         
-        const response = await axios.get(feedUrl, {
-          timeout: 15000,
-          headers: { 
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          }
+        console.log(`Searching: ${searchQuery.split(' OR ')[0]}`);
+        
+        const response = await axios.get(googleUrl, {
+          timeout: 12000,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewsBot/1.0)' }
         });
         
         const feed = await parser.parseString(response.data);
-        console.log(`Found ${feed.items.length} articles`);
+        console.log(`Found ${feed.items.length} articles for ${searchQuery.split(' OR ')[0]}`);
         
-        // Filter for recent and relevant
-        const relevantNews = feed.items
+        const youtuberNews = feed.items
           .filter(item => {
+            // Must be recent
             if (!isRecent48Hours(item.pubDate)) return false;
             
             const content = (item.title + ' ' + (item.contentSnippet || item.summary || '')).toLowerCase();
             
-            // Must contain YouTuber keywords OR social media terms
-            const socialTerms = ['youtube', 'youtuber', 'social media', 'influencer', 'content creator', 'viral', 'trending'];
-            const hasRelevantTerm = socialTerms.some(term => content.includes(term)) ||
-                                   keywords.some(keyword => content.includes(keyword.toLowerCase()));
+            // STRICT YouTuber name check
+            const hasYouTuberName = keywords.some(keyword => 
+              content.includes(keyword.toLowerCase()) ||
+              item.title.toLowerCase().includes(keyword.toLowerCase())
+            );
             
-            return hasRelevantTerm;
+            // REJECT Bollywood/irrelevant content
+            const irrelevantTerms = [
+              'bollywood', 'film', 'movie', 'actor', 'actress', 'cinema',
+              'cricket', 'ipl', 'match', 'politics', 'election', 'government',
+              'parmanand', 'maharaj', 'baba', 'saint', 'religious', 'spiritual',
+              'temple', 'festival', 'ceremony', 'wedding', 'marriage'
+            ];
+            
+            const hasIrrelevantContent = irrelevantTerms.some(term => 
+              content.includes(term)
+            );
+            
+            if (hasIrrelevantContent) {
+              console.log(`❌ REJECTED (irrelevant): "${item.title}"`);
+              return false;
+            }
+            
+            if (!hasYouTuberName) {
+              console.log(`❌ REJECTED (no YouTuber): "${item.title}"`);
+              return false;
+            }
+            
+            console.log(`✅ ACCEPTED: "${item.title}"`);
+            return true;
           })
+          .slice(0, 3) // Max 3 per YouTuber
           .map(item => ({
-            title: item.title.trim(),
-            description: item.contentSnippet || item.summary || item.content || '',
+            title: item.title.replace(/\s*-\s*[^-]*$/, '').trim(),
+            description: item.contentSnippet || item.summary || '',
             url: item.link,
             pubDate: item.pubDate,
-            source: feedUrl.includes('timesofindia') ? 'Times of India' :
-                   feedUrl.includes('ndtv') ? 'NDTV' :
-                   feedUrl.includes('hindustantimes') ? 'Hindustan Times' :
-                   feedUrl.includes('economictimes') ? 'Economic Times' :
-                   feedUrl.includes('news18') ? 'News18' : 'News Source',
-            keyword: 'news',
-            score: calculateScore(item, 'news')
+            source: 'YouTuber News',
+            keyword: searchQuery.split(' OR ')[0],
+            score: calculateScore(item, searchQuery.split(' OR ')[0])
           }));
         
-        allNews = allNews.concat(relevantNews);
-        console.log(`Added ${relevantNews.length} relevant articles`);
+        allNews = allNews.concat(youtuberNews);
+        console.log(`Added ${youtuberNews.length} YouTuber articles`);
         
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Rate limiting
         
-      } catch (feedError) {
-        console.log(`❌ ${feedUrl}: ${feedError.message}`);
+      } catch (searchError) {
+        console.log(`❌ Search error for ${searchQuery}: ${searchError.message}`);
       }
     }
     
-    // Add Google News RSS for YouTuber specific searches
-    for (const keyword of keywords.slice(0, 5)) {
-      try {
-        const googleUrl = `https://news.google.com/rss/search?q="${keyword}"&hl=en-IN&gl=IN&ceid=IN:en`;
+    // Additional search for general YouTube drama
+    try {
+      const dramaSearches = [
+        'YouTube creator controversy India',
+        'Indian YouTuber drama 2025',
+        'YouTube channel strike India',
+        'Content creator scandal India'
+      ];
+      
+      for (const dramaQuery of dramaSearches) {
+        const googleUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(dramaQuery)}&hl=en-IN&gl=IN&ceid=IN:en`;
         
         const response = await axios.get(googleUrl, {
           timeout: 10000,
@@ -236,27 +269,39 @@ async function fetchGoogleNews() {
         
         const feed = await parser.parseString(response.data);
         
-        const keywordNews = feed.items
+        const dramaNews = feed.items
           .filter(item => isRecent48Hours(item.pubDate))
-          .slice(0, 3)
+          .filter(item => {
+            const content = (item.title + ' ' + (item.contentSnippet || '')).toLowerCase();
+            
+            // Must contain YouTube/creator terms
+            const youtubeTerms = ['youtube', 'youtuber', 'creator', 'channel', 'content creator'];
+            const hasYouTubeTerm = youtubeTerms.some(term => content.includes(term));
+            
+            // Must NOT contain irrelevant terms
+            const irrelevantTerms = ['bollywood', 'cricket', 'politics', 'parmanand', 'baba'];
+            const hasIrrelevant = irrelevantTerms.some(term => content.includes(term));
+            
+            return hasYouTubeTerm && !hasIrrelevant;
+          })
+          .slice(0, 2)
           .map(item => ({
             title: item.title.replace(/\s*-\s*[^-]*$/, '').trim(),
             description: item.contentSnippet || item.summary || '',
             url: item.link,
             pubDate: item.pubDate,
-            source: 'Google News',
-            keyword: keyword,
-            score: calculateScore(item, keyword)
-          }))
-          .filter(item => isChatpatiNews(item));
+            source: 'YouTube Drama News',
+            keyword: 'youtube',
+            score: calculateScore(item, 'youtube')
+          }));
         
-        allNews = allNews.concat(keywordNews);
+        allNews = allNews.concat(dramaNews);
         
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
-      } catch (keywordError) {
-        console.log(`❌ Google search for ${keyword}: ${keywordError.message}`);
       }
+      
+    } catch (dramaError) {
+      console.log(`❌ Drama search error: ${dramaError.message}`);
     }
     
     // Remove duplicates and sort
@@ -266,11 +311,15 @@ async function fetchGoogleNews() {
     
     uniqueNews.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
     
-    googleNewsCache = uniqueNews.slice(0, 40);
-    console.log(`✅ REAL NEWS: ${googleNewsCache.length} actual articles loaded`);
+    googleNewsCache = uniqueNews.slice(0, 30);
+    console.log(`✅ YOUTUBER NEWS ONLY: ${googleNewsCache.length} relevant articles loaded`);
+    
+    if (googleNewsCache.length === 0) {
+      console.log('⚠️ No YouTuber-specific news found in last 48 hours');
+    }
     
   } catch (error) {
-    console.error('❌ News fetch failed:', error);
+    console.error('❌ YouTuber news fetch failed:', error);
     googleNewsCache = [];
   }
 }
