@@ -28,6 +28,60 @@ const APP_URL = process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER
 let newsCache = [];
 let pingCount = 0;
 
+// Utility functions for timestamp handling
+function isWithin24Hours(dateString) {
+  try {
+    if (!dateString || dateString === 'Recent') return false;
+    
+    const newsDate = new Date(dateString);
+    const now = new Date();
+    
+    // Check if date is valid
+    if (isNaN(newsDate.getTime())) return false;
+    
+    const diffInHours = (now - newsDate) / (1000 * 60 * 60);
+    
+    // Only include news from last 24 hours
+    return diffInHours <= 24 && diffInHours >= 0;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Get current timestamp for news items
+function getCurrentTimestamp() {
+  return new Date().toISOString();
+}
+
+// Validate and format date for display
+function formatNewsDate(dateString) {
+  try {
+    if (!dateString) return 'Just now';
+    
+    const newsDate = new Date(dateString);
+    if (isNaN(newsDate.getTime())) return 'Just now';
+    
+    const now = new Date();
+    const diffInHours = (now - newsDate) / (1000 * 60 * 60);
+    
+    if (diffInHours < 1) {
+      const diffInMinutes = Math.floor((now - newsDate) / (1000 * 60));
+      return diffInMinutes <= 0 ? 'Just now' : `${diffInMinutes} minutes ago`;
+    } else if (diffInHours < 24) {
+      return `${Math.floor(diffInHours)} hours ago`;
+    } else {
+      return newsDate.toLocaleDateString('en-IN', { 
+        day: 'numeric', 
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+  } catch (error) {
+    return 'Just now';
+  }
+}
+
 // Enhanced keywords with current trending topics
 let SEARCH_KEYWORDS = {
   youtubers: [
@@ -70,22 +124,22 @@ const NEWS_SOURCES = {
   ]
 };
 
-// Smart categorization
+// Smart categorization with keyword matching
 function categorizeNews(title, description = '') {
   const content = `${title} ${description}`.toLowerCase();
   
   // YouTuber detection
-  if (content.match(/carry|elvish|triggered|bhuvan|ashish|dhruv|technical guruji|flying beast|youtube|youtuber|subscriber|gaming/)) {
+  if (content.match(/carry|carryminati|elvish|triggered|bhuvan|ashish|dhruv|technical guruji|flying beast|youtube|youtuber|subscriber|gaming|roast|vlog/)) {
     return 'youtubers';
   }
   
   // Bollywood detection
-  if (content.match(/salman|shahrukh|srk|alia|ranbir|katrina|akshay|ranveer|deepika|bollywood|film|movie|actor|actress/)) {
+  if (content.match(/salman|shahrukh|srk|alia|ranbir|katrina|akshay|ranveer|deepika|bollywood|film|movie|actor|actress|cinema/)) {
     return 'bollywood';
   }
   
   // Cricket detection
-  if (content.match(/virat|kohli|rohit|sharma|dhoni|cricket|ipl|india vs|hardik|rahul|bumrah|wicket|century|match/)) {
+  if (content.match(/virat|kohli|rohit|sharma|dhoni|cricket|ipl|india vs|hardik|rahul|bumrah|wicket|century|match|bcci/)) {
     return 'cricket';
   }
   
@@ -158,29 +212,29 @@ async function scrapeGoogleNews(query) {
 async function fetchTrendingNews(category) {
   const trendingQueries = {
     youtubers: [
-      `"CarryMinati" OR "Elvish Yadav" OR "Triggered Insaan" site:youtube.com OR site:twitter.com`,
-      `Indian YouTuber trending ${new Date().getFullYear()}`,
-      `YouTube creator controversy India recent`
+      `CarryMinati latest video`,
+      `Elvish Yadav news`,
+      `Indian YouTuber trending`
     ],
     bollywood: [
-      `"Salman Khan" OR "Shah Rukh Khan" OR "Alia Bhatt" bollywood recent`,
-      `Hindi film industry news ${new Date().getFullYear()}`,
-      `Bollywood celebrity update today`
+      `Salman Khan recent news`,
+      `Bollywood latest update`,
+      `Hindi film news`
     ],
     cricket: [
-      `"Virat Kohli" OR "Rohit Sharma" cricket India recent`,
-      `Indian cricket team news ${new Date().getFullYear()}`,
-      `IPL cricket update today`
+      `Virat Kohli cricket`,
+      `Indian cricket team`,
+      `IPL cricket news`
     ],
     national: [
-      `India news today current affairs`,
-      `Modi government announcement recent`,
-      `Supreme Court India latest decision`
+      `India news today`,
+      `Modi government news`,
+      `Delhi Mumbai news`
     ],
     pakistan: [
-      `Pakistan news today viral trending`,
-      `Pakistani politics recent update`,
-      `Pakistan social media viral`
+      `Pakistan news today`,
+      `Pakistani politics`,
+      `Pakistan viral`
     ]
   };
 
@@ -232,35 +286,7 @@ async function aggregateNews() {
       }
     }
 
-    // 2. Search with time-specific keywords for guaranteed fresh content
-    console.log('🔍 Searching with time-specific keywords...');
-    
-    const timeSpecificQueries = [
-      `"today" OR "latest" OR "breaking" Indian YouTuber news`,
-      `"recent" OR "new" Bollywood actor update`,
-      `"today" OR "latest" Indian cricket team news`,
-      `"breaking" OR "latest" India news today`,
-      `"viral" OR "trending" Pakistan news today`
-    ];
-
-    for (const query of timeSpecificQueries) {
-      try {
-        totalAttempts++;
-        const articles = await scrapeGoogleNews(query);
-        
-        if (articles.length > 0) {
-          allNews.push(...articles);
-          successful++;
-          console.log(`✅ Time-specific search "${query}": ${articles.length} articles`);
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      } catch (error) {
-        console.error(`❌ Error with time-specific query "${query}":`, error.message);
-      }
-    }
-
-    // 3. If still no recent news, create VERIFIED current content
+    // 2. If no recent news found, create verified current content
     if (allNews.length === 0) {
       console.log('🚨 No recent scraped news found, creating verified current content...');
       
