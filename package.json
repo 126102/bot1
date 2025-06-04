@@ -4,8 +4,8 @@
   "description": "Free Telegram bot that aggregates viral news from Indian YouTubers, Bollywood, Cricket, and Pakistani content without using paid APIs",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
+    "start": "NODE_ENV=production node server.js",
+    "dev": "NODE_ENV=development nodemon server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
