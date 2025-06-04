@@ -48,165 +48,78 @@ const LOW_QUALITY_INDICATORS = [
   'viral ho gaya', 'trending me aa gaya', 'views mil gaye', 'famous ho gaye'
 ];
 
-// RELAXED FILTER FOR MORE CONTENT - BUT ACCURATE TIMESTAMPS
-function isRecentContent(publishDate) {
+// SMART DATE FILTER - REJECT OLD NEWS
+function isActuallyRecent(publishDate) {
+  if (!publishDate) return false;
+  
   const now = new Date();
   const newsDate = new Date(publishDate);
   
   // Check if date is valid
   if (isNaN(newsDate.getTime())) {
-    // For invalid dates, return true but mark as "Unknown time"
-    return true;
+    return false; // Invalid date = reject
   }
   
   const timeDiff = now - newsDate;
-  const hours72 = 72 * 60 * 60 * 1000; // 72 hours for more content
+  const hours48 = 48 * 60 * 60 * 1000; // Only last 48 hours
   
-  // Allow content up to 72 hours old
-  return timeDiff <= hours72 && timeDiff >= 0;
+  // Must be within last 48 hours
+  return timeDiff <= hours48 && timeDiff >= 0;
 }
 
-// COMPREHENSIVE CONTENT FILTERING SYSTEM
-function isHighQualityContent(item) {
+// CHATPATI YOUTUBER NEWS FILTER - FOR CHANNEL CONTENT
+function isChatpatiYouTuberNews(item) {
   const title = (item.title || '').toLowerCase();
   const description = (item.description || '').toLowerCase();
   const content = title + ' ' + description;
   
-  // 1. HARD SPAM FILTER - Auto reject
-  const hardSpam = [
-    'earn money online', 'paise kaise kamaye', 'free fire diamond', 'pubg uc hack',
-    'jio recharge', 'paytm cash', 'daily earning', 'work from home',
-    'business idea', 'startup tips', 'cryptocurrency', 'bitcoin trading',
-    'stock market tips', 'make money fast', 'online job', 'part time work',
-    'free course', 'download link', 'apk mod', 'hack tool', 'cracked version',
-    'whatsapp status', 'instagram reels', 'tiktok video', 'song download',
-    'movie download', 'web series download', 'bollywood songs', 'punjabi song',
-    'astrology', 'horoscope', 'vastu tips', 'spiritual guru', 'baba ji',
-    'motivational quotes', 'success mantra', 'life tips', 'relationship advice'
-  ];
-  
-  for (const spam of hardSpam) {
-    if (content.includes(spam)) {
-      console.log(`❌ SPAM BLOCKED: ${spam} in "${item.title}"`);
-      return false;
-    }
-  }
-  
-  // 2. LOW QUALITY INDICATORS - Auto reject
-  const lowQuality = [
-    'dosto dekho', 'guys subscribe karo', 'amazing trick', 'secret method',
-    'guaranteed success', 'click here now', 'link in bio', 'dm for details',
-    'follow for more', 'subscribe kar do please', 'bell icon daba do',
-    'comment me batao', 'like share subscribe', 'viral trick', 'trending hack',
-    'views badhane ka tarika', 'subscriber kaise badhaye', 'famous kaise bane',
-    'youtube shorts viral', 'reels viral kaise kare', 'thumbnail kaise banaye'
-  ];
-  
-  for (const indicator of lowQuality) {
-    if (content.includes(indicator)) {
-      console.log(`❌ LOW QUALITY: ${indicator} in "${item.title}"`);
-      return false;
-    }
-  }
-  
-  // 3. IRRELEVANT CONTENT FILTER
-  const irrelevantTopics = [
-    'cricket score', 'ipl match', 'football news', 'weather update',
-    'political news', 'election result', 'government scheme', 'tax news',
-    'bank interest rate', 'petrol price', 'gold rate', 'share market',
-    'bollywood movie', 'tv serial', 'reality show', 'bigg boss',
-    'cooking recipe', 'health tips', 'fitness workout', 'diet plan',
-    'travel vlog', 'hotel review', 'restaurant review', 'food delivery'
-  ];
-  
-  for (const topic of irrelevantTopics) {
-    if (content.includes(topic)) {
-      console.log(`❌ IRRELEVANT: ${topic} in "${item.title}"`);
-      return false;
-    }
-  }
-  
-  // 4. GENERIC CONTENT FILTER
-  const genericTerms = [
-    'how to make', 'kaise banaye', 'tutorial in hindi', 'step by step',
-    'beginners guide', 'complete course', 'free training', 'learn online',
-    'tips and tricks', 'best way to', 'ultimate guide', 'pro tips',
-    'life hacks', 'study tips', 'exam preparation', 'career guidance'
-  ];
-  
-  let genericCount = 0;
-  for (const term of genericTerms) {
-    if (content.includes(term)) genericCount++;
-  }
-  
-  if (genericCount >= 2) {
-    console.log(`❌ TOO GENERIC: Multiple generic terms in "${item.title}"`);
-    return false;
-  }
-  
-  // 5. YOUTUBE SPECIFIC FILTERS
-  if (item.source && item.source.includes('YouTube')) {
-    // Filter fake YouTuber content
-    const fakeIndicators = [
-      'shorts compilation', 'best moments', 'funny clips', 'reaction mashup',
-      'top 10 moments', 'funniest videos', 'epic fails', 'try not to laugh',
-      'tik tok videos', 'instagram memes', 'whatsapp funny', 'viral memes'
-    ];
-    
-    for (const fake of fakeIndicators) {
-      if (content.includes(fake)) {
-        console.log(`❌ FAKE CONTENT: ${fake} in "${item.title}"`);
-        return false;
-      }
-    }
-    
-    // Must have legitimate YouTuber connection
-    const hasLegitConnection = keywords.some(keyword => {
-      const keywordLower = keyword.toLowerCase();
-      return content.includes(keywordLower) && (
-        content.includes('channel') || content.includes('video') ||
-        content.includes('controversy') || content.includes('drama') ||
-        content.includes('news') || content.includes('update') ||
-        content.includes('latest') || content.includes('trending')
-      );
-    });
-    
-    if (!hasLegitConnection) {
-      console.log(`❌ NO YOUTUBER CONNECTION: "${item.title}"`);
-      return false;
-    }
-  }
-  
-  // 6. KEYWORD RELEVANCE CHECK
-  const hasRelevantKeyword = keywords.some(keyword => 
+  // MUST have YouTuber keywords
+  const hasYouTuberKeyword = keywords.some(keyword => 
     content.includes(keyword.toLowerCase())
   );
   
-  if (!hasRelevantKeyword) {
-    console.log(`❌ NO RELEVANT KEYWORD: "${item.title}"`);
-    return false;
+  if (!hasYouTuberKeyword) {
+    return false; // No YouTuber mention = reject
   }
   
-  // 7. QUALITY INDICATORS - Boost good content
-  const qualityIndicators = [
-    'breaking news', 'exclusive', 'official statement', 'press release',
-    'interview', 'behind the scenes', 'controversy explained', 'drama analysis',
-    'latest update', 'trending now', 'viral news', 'scandal revealed',
-    'exposed', 'leaked', 'announcement', 'collaboration', 'new project'
+  // CHATPATI INDICATORS - Good for channel content
+  const chatpatiTerms = [
+    'controversy', 'drama', 'fight', 'clash', 'beef', 'roast', 'exposed',
+    'scandal', 'leaked', 'viral', 'trending', 'breakup', 'feud', 'diss',
+    'reaction', 'response', 'reply', 'callout', 'apology', 'deleted',
+    'banned', 'suspended', 'strike', 'demonetized', 'hack', 'scam',
+    'fake', 'real', 'truth', 'behind scenes', 'secret', 'reveal',
+    'announcement', 'collaboration', 'new video', 'latest', 'update',
+    'breaking', 'exclusive', 'interview', 'statement', 'live stream',
+    'पकड़ा गया', 'बवाल', 'लड़ाई', 'झगड़ा', 'विवाद', 'खुलासा'
   ];
   
-  let qualityScore = 0;
-  for (const indicator of qualityIndicators) {
-    if (content.includes(indicator)) qualityScore++;
+  let chatpatiScore = 0;
+  for (const term of chatpatiTerms) {
+    if (content.includes(term)) chatpatiScore++;
   }
   
-  // Require at least some quality indicators for acceptance
-  if (qualityScore === 0) {
-    console.log(`❌ NO QUALITY INDICATORS: "${item.title}"`);
+  // Must have at least 1 chatpati indicator
+  if (chatpatiScore === 0) {
+    console.log(`❌ NOT CHATPATI: "${item.title}"`);
     return false;
   }
   
-  console.log(`✅ QUALITY APPROVED: "${item.title}" (Score: ${qualityScore})`);
+  // REJECT boring/technical content
+  const boringTerms = [
+    'tutorial', 'how to', 'tips', 'guide', 'course', 'education',
+    'study', 'exam', 'business', 'investment', 'stock market',
+    'recipe', 'cooking', 'health', 'fitness', 'motivational'
+  ];
+  
+  for (const boring of boringTerms) {
+    if (content.includes(boring)) {
+      console.log(`❌ BORING CONTENT: ${boring} in "${item.title}"`);
+      return false;
+    }
+  }
+  
+  console.log(`✅ CHATPATI APPROVED: "${item.title}" (Score: ${chatpatiScore})`);
   return true;
 }
 
@@ -363,8 +276,10 @@ async function fetchGoogleNews() {
               score: calculateScore(item, keyword)
             }));
             
-            // Filter with comprehensive quality check
-            const validItems = items.filter(item => isHighQualityContent(item));
+            // Filter with chatpati check AND recent date
+            const validItems = items.filter(item => 
+              isActuallyRecent(item.pubDate) && isChatpatiYouTuberNews(item)
+            );
             allItems = allItems.concat(validItems);
             
             await new Promise(resolve => setTimeout(resolve, 300));
@@ -635,45 +550,45 @@ function setupBotCommands() {
     userSubscriptions.add(chatId);
     
     const welcomeMessage = `
-🎬 *Pro YouTuber News Bot!* 🎬
+🌶️ *CHATPATI YouTuber News Bot!* 🌶️
 
-*🔥 TRACKING TOP CONTROVERSIAL YOUTUBERS:*
+*🔥 FOR YOUR YOUTUBE CHANNEL CONTENT:*
 ${keywords.join(', ')}
 
-*🛡️ COMPREHENSIVE FILTERING SYSTEM:*
-✅ Hardcore spam blocking (100+ terms)
-✅ Low quality content removal
-✅ Irrelevant topic filtering  
-✅ Generic content detection
-✅ Fake YouTuber content blocking
-✅ Quality indicator requirements
+*🎯 SPECIALIZED IN:*
+✅ YouTuber controversies & drama
+✅ Creator fights & beef content  
+✅ Viral scandals & expose news
+✅ Latest trending masala
+✅ Channel-worthy spicy content
+✅ Only last 48 hours news
 
-*📡 Premium Sources:*
+*📺 CHATPATI SOURCES:*
 
-*🔍 GOOGLE NEWS:*
-/google - High quality news articles
+*🔥 CONTROVERSY NEWS:*
+/google - Latest YouTuber drama & scandals
 
-*📺 YOUTUBE:*
-/youtube - Authentic YouTuber content
+*📺 CREATOR CONTENT:*
+/youtube - Fresh channel updates & videos
 
-*🐦 TWITTER/X:*
-/twitter - Quality social media buzz
+*🐦 VIRAL BUZZ:*
+/twitter - Trending social media drama
 
-*📡 FEEDLY RSS:*
-/feedly - Premium entertainment feeds
+*📡 ENTERTAINMENT:*
+/feedly - Spicy entertainment feeds
 
-*⚙️ MANAGEMENT:*
-/search [keyword] - Professional search
-/addkeyword [word] - Add custom keyword
-/keywords - Show tracked YouTubers
-/stats - System performance
+*⚙️ CHANNEL TOOLS:*
+/search [keyword] - Find specific drama
+/addkeyword [name] - Track more YouTubers
+/keywords - See controversial creators
+/stats - Content performance
 /help - Complete guide
 
-*🎯 Only ${keywords.length} TOP controversial YouTubers tracked!*
-*⏰ Content: ACCURATE TIMESTAMPS*
-*🧠 AI-powered quality filtering active!*
+*🎬 Perfect for your YouTube channel updates!*
+*⏰ Only fresh masala (last 48 hours)*
+*🌶️ Chatpati content guaranteed!*
 
-Ready for premium content! 🚀
+Ready for viral content! 🚀
     `;
     
     await sendSafeMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
@@ -686,26 +601,31 @@ Ready for premium content! 🚀
     console.log(`📱 /google from user ${chatId}`);
     
     if (googleNewsCache.length === 0) {
-      await sendSafeMessage(chatId, '⏳ Fetching REAL Google News from RSS feeds... Please wait 10-15 seconds...');
+      await sendSafeMessage(chatId, '⏳ Searching for CHATPATI YouTuber news... Please wait...');
       await fetchGoogleNews();
     }
     
     if (googleNewsCache.length === 0) {
-      await sendSafeMessage(chatId, '❌ No real news found from RSS feeds. RSS sources may be temporarily unavailable.');
+      await sendSafeMessage(chatId, '❌ No chatpati YouTuber news found in last 48 hours.\n\n💡 Koi controversy/drama nahi hai abhi. Check back later for fresh masala! 🌶️');
       return;
     }
     
     const newsItems = googleNewsCache;
-    let message = `🔍 *REAL Google News (${newsItems.length} articles from RSS):*\n\n`;
+    let message = `🔥 *CHATPATI YouTuber News (${newsItems.length} spicy items):*\n\n`;
     
     newsItems.forEach((item, index) => {
       const timeAgo = formatDate(item.pubDate);
-      message += `${index + 1}. *${item.title.substring(0, 60)}${item.title.length > 60 ? '...' : ''}*\n`;
-      message += `   📍 ${item.source} • ⏰ ${timeAgo}\n`;
-      message += `   🔗 [Read Full Article](${item.url})\n\n`;
+      const spicyIcon = item.title.toLowerCase().includes('controversy') ? '🌶️' :
+                       item.title.toLowerCase().includes('drama') ? '🔥' :
+                       item.title.toLowerCase().includes('fight') ? '⚔️' :
+                       item.title.toLowerCase().includes('viral') ? '💥' : '📰';
+      
+      message += `${index + 1}. ${spicyIcon} *${item.title.substring(0, 65)}${item.title.length > 65 ? '...' : ''}*\n`;
+      message += `   📍 ${item.source} • ⏰ ${timeAgo} • 🎯 ${item.keyword}\n`;
+      message += `   🔗 [Full Story](${item.url})\n\n`;
     });
     
-    message += `\n💡 All articles from REAL RSS feeds with accurate timestamps!`;
+    message += `\n🌶️ Perfect for your YouTube channel content! Fresh masala guaranteed!`;
     
     await sendSafeMessage(chatId, message, { 
       parse_mode: 'Markdown',
@@ -827,7 +747,7 @@ Ready for premium content! 🚀
       ...youtubeNewsCache,
       ...twitterNewsCache,
       ...feedlyNewsCache
-    ].filter(item => isRecentContent(item.pubDate) && isHighQualityContent(item)); // Double filter
+    ].filter(item => isActuallyRecent(item.pubDate) && isChatpatiYouTuberNews(item)); // Double filter
     
     if (allItems.length === 0) {
       await sendSafeMessage(chatId, '📭 No quality content available. Try refreshing with individual commands!');
