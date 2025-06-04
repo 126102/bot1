@@ -21,8 +21,14 @@ const bot = BOT_TOKEN ? new TelegramBot(BOT_TOKEN, { polling: true }) : null;
 const NEWS_SOURCES = {
   indian_news: [
     'https://www.ndtv.com/latest',
-    'https://www.aajtak.in/breaking-news',
-    'https://news.abplive.com/news'
+    'https://www.hindustantimes.com/latest-news',
+    'https://indianexpress.com/section/india/',
+    'https://timesofindia.indiatimes.com/briefs.cms'
+  ],
+  rss_feeds: [
+    'https://feeds.feedburner.com/ndtvnews-latest',
+    'https://timesofindia.indiatimes.com/rssfeedstopstories.cms',
+    'https://www.hindustantimes.com/feeds/rss/india-news/index.xml'
   ],
   twitter_handles: {
     youtubers: [
@@ -88,7 +94,44 @@ function isWithin24Hours(dateString) {
   }
 }
 
-// Scrape Google News using search simulation
+// Scrape RSS feeds for news
+async function scrapeRSSFeed(feedUrl) {
+  try {
+    const response = await axios.get(feedUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+
+    const $ = cheerio.load(response.data, { xmlMode: true });
+    const articles = [];
+
+    $('item').each((i, elem) => {
+      if (articles.length >= 15) return false;
+      
+      const title = $(elem).find('title').text();
+      const link = $(elem).find('link').text();
+      const pubDate = $(elem).find('pubDate').text();
+      const description = $(elem).find('description').text();
+
+      if (isWithin24Hours(pubDate)) {
+        articles.push({
+          title,
+          link,
+          pubDate,
+          description: description.substring(0, 200) + '...',
+          source: 'RSS Feed',
+          category: 'Indian News'
+        });
+      }
+    });
+
+    return articles;
+  } catch (error) {
+    console.error(`Error scraping RSS feed ${feedUrl}:`, error.message);
+    return [];
+  }
+}
 async function scrapeGoogleNews(query) {
   try {
     const searchUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
@@ -183,43 +226,75 @@ async function scrapeIndianNews(url) {
   }
 }
 
-// Scrape Twitter using snscrape
-async function scrapeTwitterHandle(handle, category) {
-  return new Promise((resolve) => {
-    const command = `snscrape --jsonl --max-results 5 twitter-user ${handle}`;
-    
-    exec(command, { timeout: 10000 }, (error, stdout) => {
-      if (error) {
-        console.error(`Error scraping Twitter @${handle}:`, error.message);
-        resolve([]);
-        return;
-      }
+// Alternative Twitter scraping without snscrape (using web scraping)
+async function scrapeTwitterAlternative(handle, category) {
+  try {
+    // Method 1: Try Nitter (Twitter alternative frontend)
+    const nitterInstances = [
+      'https://nitter.net',
+      'https://nitter.it',
+      'https://nitter.unixfox.eu'
+    ];
 
+    for (const instance of nitterInstances) {
       try {
-        const tweets = stdout.split('\n')
-          .filter(line => line.trim())
-          .map(line => JSON.parse(line))
-          .filter(tweet => {
-            const tweetDate = new Date(tweet.date);
-            return isWithin24Hours(tweetDate);
-          })
-          .slice(0, 3)
-          .map(tweet => ({
-            title: `@${handle}: ${tweet.rawContent.substring(0, 100)}...`,
-            link: tweet.url,
-            pubDate: tweet.date,
-            source: 'Twitter',
-            category: category,
-            engagement: `❤️ ${tweet.likeCount || 0} 🔄 ${tweet.retweetCount || 0}`
-          }));
+        const url = `${instance}/${handle}`;
+        const response = await axios.get(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          },
+          timeout: 10000
+        });
 
-        resolve(tweets);
-      } catch (parseError) {
-        console.error(`Error parsing Twitter data for @${handle}:`, parseError.message);
-        resolve([]);
+        const $ = cheerio.load(response.data);
+        const tweets = [];
+
+        $('.timeline-item').each((i, elem) => {
+          if (tweets.length >= 3) return false;
+
+          const tweetText = $(elem).find('.tweet-content').text().trim();
+          const timeText = $(elem).find('.tweet-date a').attr('title') || 'Recent';
+          const tweetLink = $(elem).find('.tweet-date a').attr('href');
+
+          if (tweetText && tweetText.length > 10) {
+            tweets.push({
+              title: `@${handle}: ${tweetText.substring(0, 100)}...`,
+              link: tweetLink ? `https://twitter.com${tweetLink}` : `https://twitter.com/${handle}`,
+              pubDate: timeText,
+              source: 'Twitter (Alt)',
+              category: category,
+              engagement: '🐦 Twitter Post'
+            });
+          }
+        });
+
+        if (tweets.length > 0) {
+          console.log(`✅ Successfully scraped @${handle} via ${instance}`);
+          return tweets;
+        }
+      } catch (error) {
+        continue; // Try next instance
       }
-    });
-  });
+    }
+
+    // Method 2: Search for mentions in Google News
+    const searchQuery = `${handle} site:twitter.com OR "${handle}" twitter`;
+    const googleResults = await scrapeGoogleNews(searchQuery);
+    
+    if (googleResults.length > 0) {
+      return googleResults.slice(0, 2).map(result => ({
+        ...result,
+        title: `@${handle}: ${result.title}`,
+        source: 'Google News (Twitter)',
+        category: category
+      }));
+    }
+
+    return [];
+  } catch (error) {
+    console.error(`Error scraping Twitter @${handle}:`, error.message);
+    return [];
+  }
 }
 
 // Main news aggregation function
@@ -238,7 +313,15 @@ async function aggregateNews() {
       }
     }
 
-    // 2. Scrape Indian news websites
+    // 2. Scrape RSS feeds
+    console.log('📡 Scraping RSS feeds...');
+    for (const feedUrl of NEWS_SOURCES.rss_feeds) {
+      const articles = await scrapeRSSFeed(feedUrl);
+      allNews.push(...articles);
+      await new Promise(resolve => setTimeout(resolve, 1500)); // Rate limiting
+    }
+
+    // 3. Scrape Indian news websites
     console.log('🇮🇳 Scraping Indian news sites...');
     for (const url of NEWS_SOURCES.indian_news) {
       const articles = await scrapeIndianNews(url);
@@ -246,13 +329,17 @@ async function aggregateNews() {
       await new Promise(resolve => setTimeout(resolve, 2000)); // Rate limiting
     }
 
-    // 3. Scrape Twitter handles
+    // 4. Scrape Twitter handles (with fallback methods)
     console.log('🐦 Scraping Twitter handles...');
     for (const category in NEWS_SOURCES.twitter_handles) {
       for (const handle of NEWS_SOURCES.twitter_handles[category]) {
-        const tweets = await scrapeTwitterHandle(handle, category);
+        // Try snscrape first, fallback to alternative method
+        let tweets = await scrapeTwitterHandle(handle, category);
+        if (tweets.length === 0) {
+          tweets = await scrapeTwitterAlternative(handle, category);
+        }
         allNews.push(...tweets);
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Rate limiting
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Increased delay for Twitter
       }
     }
 
@@ -284,7 +371,46 @@ async function aggregateNews() {
   newsCache = uniqueNews.slice(0, 100);
   
   console.log(`✅ Aggregated ${newsCache.length} unique news items`);
+  console.log(`📊 Sources: Google News, RSS Feeds, Indian Sites, Twitter`);
   return newsCache;
+}
+
+// Fallback function for snscrape (try original method first)
+async function scrapeTwitterHandle(handle, category) {
+  return new Promise((resolve) => {
+    const command = `snscrape --jsonl --max-results 5 twitter-user ${handle}`;
+    
+    exec(command, { timeout: 8000 }, (error, stdout) => {
+      if (error) {
+        // snscrape not available, will use alternative method
+        resolve([]);
+        return;
+      }
+
+      try {
+        const tweets = stdout.split('\n')
+          .filter(line => line.trim())
+          .map(line => JSON.parse(line))
+          .filter(tweet => {
+            const tweetDate = new Date(tweet.date);
+            return isWithin24Hours(tweetDate);
+          })
+          .slice(0, 3)
+          .map(tweet => ({
+            title: `@${handle}: ${tweet.rawContent.substring(0, 100)}...`,
+            link: tweet.url,
+            pubDate: tweet.date,
+            source: 'Twitter',
+            category: category,
+            engagement: `❤️ ${tweet.likeCount || 0} 🔄 ${tweet.retweetCount || 0}`
+          }));
+
+        resolve(tweets);
+      } catch (parseError) {
+        resolve([]);
+      }
+    });
+  });
 }
 
 // Format news for Telegram
@@ -475,12 +601,17 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Get the app URL from environment or construct it
+const APP_URL = process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com` || `http://localhost:${PORT}`;
+
 app.get('/', (req, res) => {
   res.json({ 
     status: 'Bot is running!', 
     newsCount: newsCache.length,
     lastUpdate: new Date().toISOString(),
     telegramBot: BOT_TOKEN ? 'Connected' : 'Not configured - missing BOT_TOKEN',
+    uptime: Math.floor(process.uptime()),
+    keepAlive: 'Active - Auto-ping enabled',
     apiEndpoints: {
       health: '/health',
       news: '/api/news',
@@ -494,7 +625,20 @@ app.get('/health', (req, res) => {
     status: 'healthy', 
     uptime: process.uptime(),
     newsAggregation: 'working',
-    telegramBot: BOT_TOKEN ? 'active' : 'inactive'
+    telegramBot: BOT_TOKEN ? 'active' : 'inactive',
+    lastPing: new Date().toISOString(),
+    totalPings: pingCount
+  });
+});
+
+// Keep-alive ping endpoint
+app.get('/ping', (req, res) => {
+  pingCount++;
+  res.json({ 
+    status: 'pong', 
+    timestamp: new Date().toISOString(),
+    pingCount: pingCount,
+    uptime: Math.floor(process.uptime())
   });
 });
 
@@ -535,14 +679,68 @@ app.get('/api/news/:category', async (req, res) => {
   }
 });
 
+// Global ping counter
+let pingCount = 0;
+
+// Auto-ping function to keep server alive
+async function keepServerAlive() {
+  try {
+    if (APP_URL && !APP_URL.includes('localhost')) {
+      const response = await axios.get(`${APP_URL}/ping`, {
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'KeepAlive-Bot/1.0'
+        }
+      });
+      console.log(`🏓 Keep-alive ping successful: ${response.data.status} | Ping #${response.data.pingCount}`);
+    }
+  } catch (error) {
+    console.log(`⚠️ Keep-alive ping failed: ${error.message}`);
+  }
+}
+
+// External ping to other free services (backup method)
+async function externalPing() {
+  try {
+    const pingTargets = [
+      'https://httpbin.org/get',
+      'https://api.github.com',
+      'https://jsonplaceholder.typicode.com/posts/1'
+    ];
+    
+    const randomTarget = pingTargets[Math.floor(Math.random() * pingTargets.length)];
+    await axios.get(randomTarget, { timeout: 5000 });
+    console.log(`🌐 External ping successful to: ${randomTarget}`);
+  } catch (error) {
+    console.log(`⚠️ External ping failed: ${error.message}`);
+  }
+}
+
+// Set up keep-alive intervals
+const PING_INTERVAL = 12 * 60 * 1000; // 12 minutes (before 15-min sleep)
+const EXTERNAL_PING_INTERVAL = 25 * 60 * 1000; // 25 minutes
+
+// Start keep-alive system
+setInterval(keepServerAlive, PING_INTERVAL);
+setInterval(externalPing, EXTERNAL_PING_INTERVAL);
+
+// Initial ping after 2 minutes
+setTimeout(() => {
+  console.log('🏓 Starting keep-alive system...');
+  keepServerAlive();
+}, 2 * 60 * 1000);
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌐 App URL: ${APP_URL}`);
   if (BOT_TOKEN) {
     console.log(`📱 Telegram Bot is active!`);
   } else {
     console.log(`⚠️ Telegram Bot not active - Add BOT_TOKEN environment variable`);
-    console.log(`🌐 API endpoints available at http://localhost:${PORT}/api/news`);
+    console.log(`🌐 API endpoints available at ${APP_URL}/api/news`);
   }
+  console.log(`🏓 Keep-alive system will start in 2 minutes`);
+  console.log(`⏰ Auto-ping every 12 minutes to prevent sleep`);
 });
 
 // Error handling
