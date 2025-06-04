@@ -485,6 +485,191 @@ if (bot) {
     console.error('Telegram error:', error.code === 'ETELEGRAM' ? 'Connection issue' : error.message);
   });
 
+  // Keyword management commands
+  bot.onText(/\/addkeyword (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const input = match[1].trim();
+    const parts = input.split(' ');
+    
+    if (parts.length < 2) {
+      bot.sendMessage(chatId, `❌ **Usage:** /addkeyword <category> <keyword>
+
+**Available Categories:**
+• youtubers
+• bollywood  
+• cricket
+• national
+• pakistan
+
+**Example:** /addkeyword youtubers MrBeast India`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keyword = parts.slice(1).join(' ');
+    
+    if (!SEARCH_KEYWORDS[category]) {
+      bot.sendMessage(chatId, `❌ **Invalid category!**
+
+**Valid categories:** youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    if (SEARCH_KEYWORDS[category].includes(keyword)) {
+      bot.sendMessage(chatId, `⚠️ **Keyword already exists!**
+
+"${keyword}" is already in ${category} category.`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    SEARCH_KEYWORDS[category].push(keyword);
+    bot.sendMessage(chatId, `✅ **Keyword Added Successfully!**
+
+📝 **Added:** "${keyword}"
+📂 **Category:** ${category}
+📊 **Total keywords in ${category}:** ${SEARCH_KEYWORDS[category].length}
+
+🔄 Use /refresh to fetch news with new keyword!`, { parse_mode: 'Markdown' });
+  });
+
+  bot.onText(/\/removekeyword (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const input = match[1].trim();
+    const parts = input.split(' ');
+    
+    if (parts.length < 2) {
+      bot.sendMessage(chatId, `❌ **Usage:** /removekeyword <category> <keyword>
+
+**Example:** /removekeyword youtubers MrBeast India`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keyword = parts.slice(1).join(' ');
+    
+    if (!SEARCH_KEYWORDS[category]) {
+      bot.sendMessage(chatId, `❌ **Invalid category!**
+
+**Valid categories:** youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const index = SEARCH_KEYWORDS[category].indexOf(keyword);
+    if (index === -1) {
+      bot.sendMessage(chatId, `❌ **Keyword not found!**
+
+"${keyword}" does not exist in ${category} category.
+
+Use /listkeywords to see all current keywords.`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    SEARCH_KEYWORDS[category].splice(index, 1);
+    bot.sendMessage(chatId, `✅ **Keyword Removed Successfully!**
+
+🗑️ **Removed:** "${keyword}"
+📂 **Category:** ${category}  
+📊 **Remaining keywords in ${category}:** ${SEARCH_KEYWORDS[category].length}
+
+🔄 Use /refresh to update news sources!`, { parse_mode: 'Markdown' });
+  });
+
+  bot.onText(/\/listkeywords/, (msg) => {
+    const chatId = msg.chat.id;
+    let message = '📝 **CURRENT SEARCH KEYWORDS**\n\n';
+    
+    for (const [category, keywords] of Object.entries(SEARCH_KEYWORDS)) {
+      const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
+      
+      message += `${icon} **${category.toUpperCase()}** (${keywords.length} keywords):\n`;
+      
+      // Show first 8 keywords, then indicate if there are more
+      const displayKeywords = keywords.slice(0, 8);
+      message += displayKeywords.map(k => `• ${k}`).join('\n');
+      
+      if (keywords.length > 8) {
+        message += `\n• _...and ${keywords.length - 8} more keywords_`;
+      }
+      message += '\n\n';
+    }
+    
+    message += `🛠️ **Keyword Management:**
+/addkeyword <category> <keyword> - Add new keyword
+/removekeyword <category> <keyword> - Remove keyword
+/clearkeywords <category> - Clear all keywords from category
+
+📊 **Total Keywords:** ${Object.values(SEARCH_KEYWORDS).flat().length}`;
+    
+    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  });
+
+  bot.onText(/\/clearkeywords (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const category = match[1].trim().toLowerCase();
+    
+    if (!SEARCH_KEYWORDS[category]) {
+      bot.sendMessage(chatId, `❌ **Invalid category!**
+
+**Valid categories:** youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const keywordCount = SEARCH_KEYWORDS[category].length;
+    SEARCH_KEYWORDS[category] = [];
+    
+    bot.sendMessage(chatId, `🗑️ **All Keywords Cleared!**
+
+📂 **Category:** ${category}
+🔢 **Removed:** ${keywordCount} keywords
+
+⚠️ **Note:** This category will now use fallback content only until you add new keywords.
+
+➕ Use /addkeyword ${category} <keyword> to add new keywords`, { parse_mode: 'Markdown' });
+  });
+
+  bot.onText(/\/resetkeywords/, (msg) => {
+    const chatId = msg.chat.id;
+    
+    // Reset to default keywords
+    SEARCH_KEYWORDS = {
+      youtubers: [
+        'CarryMinati latest video', 'Elvish Yadav news', 'Triggered Insaan recent',
+        'BB Ki Vines new', 'Ashish Chanchlani update', 'Dhruv Rathee latest',
+        'Technical Guruji review', 'Flying Beast vlog', 'Indian YouTuber trending'
+      ],
+      bollywood: [
+        'Salman Khan news today', 'Shah Rukh Khan latest', 'Alia Bhatt recent',
+        'Ranbir Kapoor update', 'Katrina Kaif news', 'Akshay Kumar film',
+        'Ranveer Singh latest', 'Deepika Padukone update', 'Bollywood news today'
+      ],
+      cricket: [
+        'Virat Kohli cricket', 'Rohit Sharma news', 'Indian cricket team',
+        'IPL cricket news', 'Hardik Pandya update', 'KL Rahul performance',
+        'India cricket today', 'BCCI announcement', 'Cricket match India'
+      ],
+      national: [
+        'India news today', 'Modi government news', 'Delhi news update',
+        'Mumbai latest news', 'Supreme Court India', 'Parliament news',
+        'Indian politics today', 'Government announcement', 'India current affairs'
+      ],
+      pakistan: [
+        'Pakistan news today', 'Pakistani politics', 'Karachi news',
+        'Lahore update', 'Pakistan viral video', 'Pakistani cricket',
+        'Pakistan trending', 'Imran Khan news', 'Pakistan social media'
+      ]
+    };
+    
+    const totalKeywords = Object.values(SEARCH_KEYWORDS).flat().length;
+    
+    bot.sendMessage(chatId, `🔄 **Keywords Reset to Default!**
+
+✅ All categories restored to original keywords
+📊 **Total keywords:** ${totalKeywords}
+🔧 **Categories updated:** 5 (youtubers, bollywood, cricket, national, pakistan)
+
+🚀 Use /refresh to apply default keywords immediately!`, { parse_mode: 'Markdown' });
+  });
+
   bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const welcomeMessage = `
@@ -497,7 +682,7 @@ Latest viral & controversial news from:
 📰 Breaking National News
 🇵🇰 Pakistani Viral Content
 
-**Commands:**
+**📰 News Commands:**
 /latest - All latest news
 /youtubers - YouTube creator updates
 /bollywood - Film industry news
@@ -506,6 +691,20 @@ Latest viral & controversial news from:
 /pakistan - Viral Pakistani content
 /refresh - Update all sources
 /status - Bot statistics
+
+**🛠️ Keyword Management:**
+/addkeyword <category> <keyword> - Add search term
+/removekeyword <category> <keyword> - Remove term
+/listkeywords - Show all current keywords
+/clearkeywords <category> - Clear category keywords
+/resetkeywords - Restore default keywords
+
+**📂 Categories:** youtubers, bollywood, cricket, national, pakistan
+
+**Examples:**
+• /addkeyword youtubers Fukra Insaan
+• /addkeyword bollywood Janhvi Kapoor  
+• /removekeyword cricket IPL scandal
 
 🚀 Fresh content updated every 2 hours!
     `;
