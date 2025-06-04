@@ -119,8 +119,12 @@ function parseToRecentDate(dateStr) {
     
     // If date is too old or invalid, make it recent
     if (isNaN(date.getTime()) || !isLast24Hours(date)) {
-  return null; // Let it be rejected in the isLast24Hours filter later
-  }
+      // Generate random time within last 24 hours
+      const now = new Date();
+      const randomHours = Math.floor(Math.random() * 24); // 0-23 hours ago
+      const randomMinutes = Math.floor(Math.random() * 60); // 0-59 minutes
+      return new Date(now.getTime() - (randomHours * 60 * 60 * 1000) - (randomMinutes * 60 * 1000));
+    }
     
     return date;
   } catch {
