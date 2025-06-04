@@ -5,7 +5,7 @@ const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// Bot configuration with error handling
+// Bot configuration with error handling and webhook mode for production
 const BOT_TOKEN = process.env.BOT_TOKEN;
 
 if (!BOT_TOKEN) {
@@ -15,20 +15,26 @@ if (!BOT_TOKEN) {
   console.log('🚀 Bot will run in API-only mode (no Telegram polling)');
 }
 
-const bot = BOT_TOKEN ? new TelegramBot(BOT_TOKEN, { polling: true }) : null;
+// Use webhook in production to avoid multiple instance conflicts
+const isProduction = process.env.NODE_ENV === 'production';
+const bot = BOT_TOKEN ? new TelegramBot(BOT_TOKEN, { 
+  polling: !isProduction,  // Only use polling in development
+  webHook: isProduction    // Use webhook in production
+}) : null;
 
 // News sources and handles
 const NEWS_SOURCES = {
   indian_news: [
     'https://www.ndtv.com/latest',
-    'https://www.hindustantimes.com/latest-news',
     'https://indianexpress.com/section/india/',
-    'https://timesofindia.indiatimes.com/briefs.cms'
+    'https://timesofindia.indiatimes.com/briefs.cms',
+    'https://www.news18.com/news/'
   ],
   rss_feeds: [
     'https://feeds.feedburner.com/ndtvnews-latest',
     'https://timesofindia.indiatimes.com/rssfeedstopstories.cms',
-    'https://www.hindustantimes.com/feeds/rss/india-news/index.xml'
+    'https://www.news18.com/commonfeeds/v1/eng/rss/india.xml',
+    'https://indianexpress.com/print/front-page/feed/'
   ],
   twitter_handles: {
     youtubers: [
@@ -433,8 +439,55 @@ function formatNewsMessage(articles, category) {
   return message;
 }
 
+// Express app setup
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(express.json());
+
+// Get the app URL from environment or construct it
+const APP_URL = process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com` || `http://localhost:${PORT}`;
+
+// Set up webhook for production
+if (bot && isProduction) {
+  const webhookPath = `/webhook/${BOT_TOKEN}`;
+  
+  // Set webhook
+  bot.setWebHook(`${APP_URL}${webhookPath}`)
+    .then(() => {
+      console.log('✅ Webhook set successfully');
+    })
+    .catch(err => {
+      console.error('❌ Failed to set webhook:', err.message);
+    });
+
+  // Handle webhook updates
+  app.post(webhookPath, (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+  });
+}
+
 // Bot commands (only if bot is initialized)
 if (bot) {
+  // Error handling for bot
+  bot.on('polling_error', (error) => {
+    if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
+      console.log('⚠️ Multiple bot instances detected. Switching to webhook mode...');
+      if (!isProduction) {
+        // Force production mode to use webhook
+        process.env.NODE_ENV = 'production';
+      }
+    } else {
+      console.error('Telegram polling error:', error.message);
+    }
+  });
+
+  bot.on('webhook_error', (error) => {
+    console.error('Telegram webhook error:', error);
+  });
   bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const welcomeMessage = `
@@ -573,33 +626,18 @@ Get the latest viral & controversial news from:
     bot.sendMessage(chatId, `✅ Refreshed! Found ${news.length} new articles in the last 24 hours.`);
   });
 
-  // Error handling for bot
-  bot.on('polling_error', (error) => {
-    console.error('Telegram polling error:', error.message);
-  });
-
   console.log('📱 Telegram Bot is active!');
+  if (isProduction) {
+    console.log('🌐 Using webhook mode (production)');
+  } else {
+    console.log('🔄 Using polling mode (development)');
+  }
 } else {
   console.log('⚠️ Telegram Bot not initialized - missing BOT_TOKEN');
   console.log('🌐 Running in API-only mode');
 }
 
-// Auto-refresh news every 2 hours
-setInterval(async () => {
-  console.log('🔄 Auto-refreshing news...');
-  await aggregateNews();
-}, 2 * 60 * 60 * 1000);
-
-// Initial news load
-setTimeout(async () => {
-  console.log('🚀 Initial news aggregation...');
-  await aggregateNews();
-}, 5000);
-
 // Health check endpoint for Render
-const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 3000;
 
 // Get the app URL from environment or construct it
 const APP_URL = process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com` || `http://localhost:${PORT}`;
@@ -735,6 +773,11 @@ app.listen(PORT, () => {
   console.log(`🌐 App URL: ${APP_URL}`);
   if (BOT_TOKEN) {
     console.log(`📱 Telegram Bot is active!`);
+    if (isProduction) {
+      console.log('🌐 Using webhook mode (production)');
+    } else {
+      console.log('🔄 Using polling mode (development)');
+    }
   } else {
     console.log(`⚠️ Telegram Bot not active - Add BOT_TOKEN environment variable`);
     console.log(`🌐 API endpoints available at ${APP_URL}/api/news`);
@@ -742,6 +785,18 @@ app.listen(PORT, () => {
   console.log(`🏓 Keep-alive system will start in 2 minutes`);
   console.log(`⏰ Auto-ping every 12 minutes to prevent sleep`);
 });
+
+// Auto-refresh news every 2 hours
+setInterval(async () => {
+  console.log('🔄 Auto-refreshing news...');
+  await aggregateNews();
+}, 2 * 60 * 60 * 1000);
+
+// Initial news load
+setTimeout(async () => {
+  console.log('🚀 Initial news aggregation...');
+  await aggregateNews();
+}, 5000);
 
 // Error handling
 process.on('unhandledRejection', (reason, promise) => {
