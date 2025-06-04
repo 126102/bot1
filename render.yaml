@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: viral-news-bot
+    env: node
+    buildCommand: |
+      npm install
+      # Install Python and snscrape
+      apt-get update
+      apt-get install -y python3 python3-pip
+      pip3 install snscrape
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BOT_TOKEN
+        fromGroup: bot-secrets
+    disk:
+      name: viral-news-storage
+      mountPath: /tmp
+      sizeGB: 1
