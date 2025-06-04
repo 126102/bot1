@@ -404,44 +404,94 @@ async function fetchGoogleNews() {
   }
 }
 
-// 2. ENHANCED YOUTUBE - 50+ ITEMS WITH ACCURATE TIMESTAMPS
+// 2. REAL YOUTUBE CONTENT FROM ACTUAL SOURCES
 async function fetchYouTubeContent() {
-  console.log('📺 Fetching YouTube content (50+ items with ACCURATE timestamps)...');
+  console.log('📺 Fetching REAL YouTube content from actual sources...');
   let allVideos = [];
   
   try {
-    const youtubeKeywords = keywords.slice(0, 30); // More keywords
+    // Try to get real YouTube channel RSS feeds (these actually work)
+    const popularChannels = [
+      'UCxqAWLTk1CmBvZFPzeZMd9A', // CarryMinati
+      'UC2wP6wjVkI_B2p4QRaG6Q3Q', // Technical Guruji
+      'UCn4rEMqKtwBQ6-oEv2Yp-Tw', // BB Ki Vines
+      'UC6-F5tO8uklgE9Zy8IvbdFw', // Ashish Chanchlani
+      'UCSNUqNkLe_z8ZK1SLyP6taw', // Triggered Insaan
+    ];
     
-    for (const keyword of youtubeKeywords) {
+    for (const channelId of popularChannels) {
       try {
-        // Multiple variations per keyword
-        const variations = ['latest', 'new', 'controversy', 'drama', 'news'];
+        const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
         
-        for (const variation of variations) {
-          allVideos.push({
-            title: `${keyword} - ${variation.charAt(0).toUpperCase() + variation.slice(1)} Content`,
-            description: `Recent ${variation} content related to ${keyword}`,
-            url: `https://www.youtube.com/results?search_query=${encodeURIComponent(keyword + ' ' + variation)}&sp=CAI%253D`,
-            pubDate: new Date(Date.now() - Math.random() * 48 * 60 * 60 * 1000).toISOString(), // Random time in last 48h
-            source: `YouTube - ${keyword}`,
-            keyword: keyword,
-            score: Math.floor(Math.random() * 30) + 20
-          });
+        const response = await axios.get(rssUrl, {
+          timeout: 10000,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; YoutubeBot/1.0)' }
+        });
+        
+        const feed = await parser.parseString(response.data);
+        
+        if (feed.items && feed.items.length > 0) {
+          const channelItems = feed.items.slice(0, 5).map(item => ({
+            title: item.title,
+            description: item.contentSnippet || item.summary || '',
+            url: item.link,
+            pubDate: item.pubDate || item.isoDate,
+            source: `YouTube Channel`,
+            keyword: 'youtube',
+            score: calculateScore(item, 'youtube')
+          }));
+          
+          allVideos = allVideos.concat(channelItems);
+          console.log(`Got ${channelItems.length} videos from channel ${channelId}`);
         }
         
-      } catch (error) {
-        console.log(`YouTube error for ${keyword}: ${error.message}`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (channelError) {
+        console.log(`Channel RSS error for ${channelId}: ${channelError.message}`);
       }
     }
     
-    // Sort by date
-    allVideos.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+    // Add YouTube news from general tech feeds
+    try {
+      const youtubeNewsUrl = 'https://news.google.com/rss/search?q=YouTube+creator+news&hl=en-IN&gl=IN&ceid=IN:en';
+      
+      const response = await axios.get(youtubeNewsUrl, {
+        timeout: 10000,
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewsBot/1.0)' }
+      });
+      
+      const feed = await parser.parseString(response.data);
+      
+      const newsItems = feed.items.slice(0, 20).map(item => ({
+        title: item.title.replace(/\s*-\s*[^-]*$/, '').trim(),
+        description: item.contentSnippet || item.summary || '',
+        url: item.link,
+        pubDate: item.pubDate || new Date().toISOString(),
+        source: 'YouTube News',
+        keyword: 'youtube',
+        score: calculateScore(item, 'youtube')
+      }));
+      
+      allVideos = allVideos.concat(newsItems);
+      console.log(`Got ${newsItems.length} YouTube news items`);
+      
+    } catch (newsError) {
+      console.log(`YouTube news error: ${newsError.message}`);
+    }
     
-    youtubeNewsCache = allVideos.slice(0, 60); // Keep 60 for selection
-    console.log(`✅ YouTube: ${youtubeNewsCache.length} items with ACCURATE timestamps`);
+    // Remove duplicates and sort
+    const uniqueVideos = allVideos.filter((item, index, self) => 
+      index === self.findIndex(i => i.title === item.title)
+    );
+    
+    uniqueVideos.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+    
+    youtubeNewsCache = uniqueVideos.slice(0, 40);
+    console.log(`✅ YouTube: ${youtubeNewsCache.length} REAL videos and news loaded`);
     
   } catch (error) {
-    console.error('❌ YouTube aggregation failed:', error);
+    console.error('❌ YouTube content aggregation failed:', error);
   }
 }
 
@@ -636,26 +686,26 @@ Ready for premium content! 🚀
     console.log(`📱 /google from user ${chatId}`);
     
     if (googleNewsCache.length === 0) {
-      await sendSafeMessage(chatId, '⏳ Fetching quality Google News (REAL 24h data)... Please wait...');
+      await sendSafeMessage(chatId, '⏳ Fetching REAL Google News from RSS feeds... Please wait 10-15 seconds...');
       await fetchGoogleNews();
     }
     
     if (googleNewsCache.length === 0) {
-      await sendSafeMessage(chatId, '❌ No quality Google News found in last 24 hours. Our filters are very strict for authenticity.');
+      await sendSafeMessage(chatId, '❌ No real news found from RSS feeds. RSS sources may be temporarily unavailable.');
       return;
     }
     
     const newsItems = googleNewsCache;
-    let message = `🔍 *Smart Google News (${newsItems.length} quality articles):*\n\n`;
+    let message = `🔍 *REAL Google News (${newsItems.length} articles from RSS):*\n\n`;
     
     newsItems.forEach((item, index) => {
       const timeAgo = formatDate(item.pubDate);
       message += `${index + 1}. *${item.title.substring(0, 60)}${item.title.length > 60 ? '...' : ''}*\n`;
-      message += `   📍 ${item.source} • ⏰ ${timeAgo} • 🎯 ${item.keyword}\n`;
-      message += `   🔗 [Read Article](${item.url})\n\n`;
+      message += `   📍 ${item.source} • ⏰ ${timeAgo}\n`;
+      message += `   🔗 [Read Full Article](${item.url})\n\n`;
     });
     
-    message += `\n💡 All articles verified for quality & relevance!`;
+    message += `\n💡 All articles from REAL RSS feeds with accurate timestamps!`;
     
     await sendSafeMessage(chatId, message, { 
       parse_mode: 'Markdown',
