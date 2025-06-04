@@ -2,11 +2,11 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { exec } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+const express = require('express');
 
 // Bot configuration with error handling and webhook mode for production
 const BOT_TOKEN = process.env.BOT_TOKEN;
+const isProduction = process.env.NODE_ENV === 'production';
 
 if (!BOT_TOKEN) {
   console.error('❌ BOT_TOKEN environment variable is required!');
@@ -16,11 +16,25 @@ if (!BOT_TOKEN) {
 }
 
 // Use webhook in production to avoid multiple instance conflicts
-const isProduction = process.env.NODE_ENV === 'production';
 const bot = BOT_TOKEN ? new TelegramBot(BOT_TOKEN, { 
   polling: !isProduction,  // Only use polling in development
   webHook: isProduction    // Use webhook in production
 }) : null;
+
+// Express app setup
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(express.json());
+
+// Get the app URL from environment or construct it
+const APP_URL = process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com` || `http://localhost:${PORT}`;
+
+// Global variables
+let processedNews = new Set();
+let newsCache = [];
+let pingCount = 0;
 
 // News sources and handles
 const NEWS_SOURCES = {
@@ -84,10 +98,6 @@ const SEARCH_KEYWORDS = {
   ]
 };
 
-// Store processed news to avoid duplicates
-let processedNews = new Set();
-let newsCache = [];
-
 // Utility function to check if news is from last 24 hours
 function isWithin24Hours(dateString) {
   try {
@@ -97,6 +107,46 @@ function isWithin24Hours(dateString) {
     return diffInHours <= 24;
   } catch (error) {
     return true; // Include if we can't parse date
+  }
+}
+
+// Scrape Google News using search simulation
+async function scrapeGoogleNews(query) {
+  try {
+    const searchUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
+    const response = await axios.get(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+
+    const $ = cheerio.load(response.data, { xmlMode: true });
+    const articles = [];
+
+    $('item').each((i, elem) => {
+      if (articles.length >= 10) return false;
+      
+      const title = $(elem).find('title').text();
+      const link = $(elem).find('link').text();
+      const pubDate = $(elem).find('pubDate').text();
+      const description = $(elem).find('description').text();
+
+      if (isWithin24Hours(pubDate)) {
+        articles.push({
+          title,
+          link,
+          pubDate,
+          description: description.substring(0, 200) + '...',
+          source: 'Google News',
+          category: query
+        });
+      }
+    });
+
+    return articles;
+  } catch (error) {
+    console.error(`Error scraping Google News for ${query}:`, error.message);
+    return [];
   }
 }
 
@@ -138,44 +188,6 @@ async function scrapeRSSFeed(feedUrl) {
     return [];
   }
 }
-async function scrapeGoogleNews(query) {
-  try {
-    const searchUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
-    const response = await axios.get(searchUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-
-    const $ = cheerio.load(response.data, { xmlMode: true });
-    const articles = [];
-
-    $('item').each((i, elem) => {
-      if (articles.length >= 10) return false;
-      
-      const title = $(elem).find('title').text();
-      const link = $(elem).find('link').text();
-      const pubDate = $(elem).find('pubDate').text();
-      const description = $(elem).find('description').text();
-
-      if (isWithin24Hours(pubDate)) {
-        articles.push({
-          title,
-          link,
-          pubDate,
-          description: description.substring(0, 200) + '...',
-          source: 'Google News',
-          category: query
-        });
-      }
-    });
-
-    return articles;
-  } catch (error) {
-    console.error(`Error scraping Google News for ${query}:`, error.message);
-    return [];
-  }
-}
 
 // Scrape Indian news websites
 async function scrapeIndianNews(url) {
@@ -193,9 +205,11 @@ async function scrapeIndianNews(url) {
     // Different selectors for different sites
     if (url.includes('ndtv.com')) {
       selectors = ['.news_Itm', '.story-card', '.nstory_header'];
-    } else if (url.includes('aajtak.in')) {
+    } else if (url.includes('indianexpress.com')) {
       selectors = ['.story-card', '.headline', '.news-item'];
-    } else if (url.includes('abplive.com')) {
+    } else if (url.includes('timesofindia.com')) {
+      selectors = ['.story-card', '.news-card', '.headline'];
+    } else if (url.includes('news18.com')) {
       selectors = ['.story-card', '.news-card', '.headline'];
     }
 
@@ -230,6 +244,44 @@ async function scrapeIndianNews(url) {
     console.error(`Error scraping ${url}:`, error.message);
     return [];
   }
+}
+
+// Fallback function for snscrape (try original method first)
+async function scrapeTwitterHandle(handle, category) {
+  return new Promise((resolve) => {
+    const command = `snscrape --jsonl --max-results 5 twitter-user ${handle}`;
+    
+    exec(command, { timeout: 8000 }, (error, stdout) => {
+      if (error) {
+        // snscrape not available, will use alternative method
+        resolve([]);
+        return;
+      }
+
+      try {
+        const tweets = stdout.split('\n')
+          .filter(line => line.trim())
+          .map(line => JSON.parse(line))
+          .filter(tweet => {
+            const tweetDate = new Date(tweet.date);
+            return isWithin24Hours(tweetDate);
+          })
+          .slice(0, 3)
+          .map(tweet => ({
+            title: `@${handle}: ${tweet.rawContent.substring(0, 100)}...`,
+            link: tweet.url,
+            pubDate: tweet.date,
+            source: 'Twitter',
+            category: category,
+            engagement: `❤️ ${tweet.likeCount || 0} 🔄 ${tweet.retweetCount || 0}`
+          }));
+
+        resolve(tweets);
+      } catch (parseError) {
+        resolve([]);
+      }
+    });
+  });
 }
 
 // Alternative Twitter scraping without snscrape (using web scraping)
@@ -381,44 +433,6 @@ async function aggregateNews() {
   return newsCache;
 }
 
-// Fallback function for snscrape (try original method first)
-async function scrapeTwitterHandle(handle, category) {
-  return new Promise((resolve) => {
-    const command = `snscrape --jsonl --max-results 5 twitter-user ${handle}`;
-    
-    exec(command, { timeout: 8000 }, (error, stdout) => {
-      if (error) {
-        // snscrape not available, will use alternative method
-        resolve([]);
-        return;
-      }
-
-      try {
-        const tweets = stdout.split('\n')
-          .filter(line => line.trim())
-          .map(line => JSON.parse(line))
-          .filter(tweet => {
-            const tweetDate = new Date(tweet.date);
-            return isWithin24Hours(tweetDate);
-          })
-          .slice(0, 3)
-          .map(tweet => ({
-            title: `@${handle}: ${tweet.rawContent.substring(0, 100)}...`,
-            link: tweet.url,
-            pubDate: tweet.date,
-            source: 'Twitter',
-            category: category,
-            engagement: `❤️ ${tweet.likeCount || 0} 🔄 ${tweet.retweetCount || 0}`
-          }));
-
-        resolve(tweets);
-      } catch (parseError) {
-        resolve([]);
-      }
-    });
-  });
-}
-
 // Format news for Telegram
 function formatNewsMessage(articles, category) {
   if (!articles.length) {
@@ -438,20 +452,6 @@ function formatNewsMessage(articles, category) {
 
   return message;
 }
-
-// Express app setup
-const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Middleware
-app.use(express.json());
-
-// Global ping counter
-let pingCount = 0;
-
-// Get the app URL from environment or construct it
-const APP_URL = process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com` || `http://localhost:${PORT}`;
 
 // Set up webhook for production
 if (bot && isProduction) {
@@ -491,6 +491,7 @@ if (bot) {
   bot.on('webhook_error', (error) => {
     console.error('Telegram webhook error:', error);
   });
+
   bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const welcomeMessage = `
@@ -640,11 +641,7 @@ Get the latest viral & controversial news from:
   console.log('🌐 Running in API-only mode');
 }
 
-// Health check endpoint for Render
-
-// Get the app URL from environment or construct it
-const APP_URL = process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com` || `http://localhost:${PORT}`;
-
+// Express routes
 app.get('/', (req, res) => {
   res.json({ 
     status: 'Bot is running!', 
@@ -720,9 +717,6 @@ app.get('/api/news/:category', async (req, res) => {
   }
 });
 
-// Global ping counter
-let pingCount = 0;
-
 // Auto-ping function to keep server alive
 async function keepServerAlive() {
   try {
@@ -771,6 +765,19 @@ setTimeout(() => {
   keepServerAlive();
 }, 2 * 60 * 1000);
 
+// Auto-refresh news every 2 hours
+setInterval(async () => {
+  console.log('🔄 Auto-refreshing news...');
+  await aggregateNews();
+}, 2 * 60 * 60 * 1000);
+
+// Initial news load
+setTimeout(async () => {
+  console.log('🚀 Initial news aggregation...');
+  await aggregateNews();
+}, 5000);
+
+// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 App URL: ${APP_URL}`);
@@ -788,18 +795,6 @@ app.listen(PORT, () => {
   console.log(`🏓 Keep-alive system will start in 2 minutes`);
   console.log(`⏰ Auto-ping every 12 minutes to prevent sleep`);
 });
-
-// Auto-refresh news every 2 hours
-setInterval(async () => {
-  console.log('🔄 Auto-refreshing news...');
-  await aggregateNews();
-}, 2 * 60 * 60 * 1000);
-
-// Initial news load
-setTimeout(async () => {
-  console.log('🚀 Initial news aggregation...');
-  await aggregateNews();
-}, 5000);
 
 // Error handling
 process.on('unhandledRejection', (reason, promise) => {
