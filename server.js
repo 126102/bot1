@@ -5,9 +5,17 @@ const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// Bot configuration
+// Bot configuration with error handling
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+
+if (!BOT_TOKEN) {
+  console.error('❌ BOT_TOKEN environment variable is required!');
+  console.log('🔧 Please set BOT_TOKEN in your environment variables');
+  console.log('📱 Get your token from @BotFather on Telegram');
+  console.log('🚀 Bot will run in API-only mode (no Telegram polling)');
+}
+
+const bot = BOT_TOKEN ? new TelegramBot(BOT_TOKEN, { polling: true }) : null;
 
 // News sources and handles
 const NEWS_SOURCES = {
@@ -299,10 +307,11 @@ function formatNewsMessage(articles, category) {
   return message;
 }
 
-// Bot commands
-bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
-  const welcomeMessage = `
+// Bot commands (only if bot is initialized)
+if (bot) {
+  bot.onText(/\/start/, (msg) => {
+    const chatId = msg.chat.id;
+    const welcomeMessage = `
 🔥 **VIRAL NEWS BOT** 🔥
 
 Get the latest viral & controversial news from:
@@ -322,121 +331,132 @@ Get the latest viral & controversial news from:
 /refresh - Force refresh news
 
 🚀 All news is from the last 24 hours only!
-  `;
-  
-  bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/latest/, async (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, '🔄 Fetching latest viral news... Please wait!');
-  
-  const news = await aggregateNews();
-  const message = formatNewsMessage(news, 'Latest Viral');
-  
-  bot.sendMessage(chatId, message, { 
-    parse_mode: 'Markdown',
-    disable_web_page_preview: true 
+    `;
+    
+    bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
   });
-});
 
-bot.onText(/\/youtubers/, async (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, '🎥 Getting YouTuber news...');
-  
-  const news = newsCache.filter(article => 
-    article.category === 'youtubers' || 
-    SEARCH_KEYWORDS.youtubers.some(keyword => 
-      article.title.toLowerCase().includes(keyword.toLowerCase())
-    )
-  );
-  
-  const message = formatNewsMessage(news, 'YouTuber');
-  bot.sendMessage(chatId, message, { 
-    parse_mode: 'Markdown',
-    disable_web_page_preview: true 
+  bot.onText(/\/latest/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, '🔄 Fetching latest viral news... Please wait!');
+    
+    const news = await aggregateNews();
+    const message = formatNewsMessage(news, 'Latest Viral');
+    
+    bot.sendMessage(chatId, message, { 
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true 
+    });
   });
-});
 
-bot.onText(/\/bollywood/, async (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, '🎭 Getting Bollywood news...');
-  
-  const news = newsCache.filter(article => 
-    article.category === 'bollywood' || 
-    SEARCH_KEYWORDS.bollywood.some(keyword => 
-      article.title.toLowerCase().includes(keyword.toLowerCase())
-    )
-  );
-  
-  const message = formatNewsMessage(news, 'Bollywood');
-  bot.sendMessage(chatId, message, { 
-    parse_mode: 'Markdown',
-    disable_web_page_preview: true 
+  bot.onText(/\/youtubers/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, '🎥 Getting YouTuber news...');
+    
+    const news = newsCache.filter(article => 
+      article.category === 'youtubers' || 
+      SEARCH_KEYWORDS.youtubers.some(keyword => 
+        article.title.toLowerCase().includes(keyword.toLowerCase())
+      )
+    );
+    
+    const message = formatNewsMessage(news, 'YouTuber');
+    bot.sendMessage(chatId, message, { 
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true 
+    });
   });
-});
 
-bot.onText(/\/cricket/, async (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, '🏏 Getting Cricket news...');
-  
-  const news = newsCache.filter(article => 
-    article.category === 'cricket' || 
-    SEARCH_KEYWORDS.cricket.some(keyword => 
-      article.title.toLowerCase().includes(keyword.toLowerCase())
-    )
-  );
-  
-  const message = formatNewsMessage(news, 'Cricket');
-  bot.sendMessage(chatId, message, { 
-    parse_mode: 'Markdown',
-    disable_web_page_preview: true 
+  bot.onText(/\/bollywood/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, '🎭 Getting Bollywood news...');
+    
+    const news = newsCache.filter(article => 
+      article.category === 'bollywood' || 
+      SEARCH_KEYWORDS.bollywood.some(keyword => 
+        article.title.toLowerCase().includes(keyword.toLowerCase())
+      )
+    );
+    
+    const message = formatNewsMessage(news, 'Bollywood');
+    bot.sendMessage(chatId, message, { 
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true 
+    });
   });
-});
 
-bot.onText(/\/national/, async (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, '🇮🇳 Getting National news...');
-  
-  const news = newsCache.filter(article => 
-    article.category === 'national' || 
-    article.category === 'Indian News'
-  );
-  
-  const message = formatNewsMessage(news, 'National Breaking');
-  bot.sendMessage(chatId, message, { 
-    parse_mode: 'Markdown',
-    disable_web_page_preview: true 
+  bot.onText(/\/cricket/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, '🏏 Getting Cricket news...');
+    
+    const news = newsCache.filter(article => 
+      article.category === 'cricket' || 
+      SEARCH_KEYWORDS.cricket.some(keyword => 
+        article.title.toLowerCase().includes(keyword.toLowerCase())
+      )
+    );
+    
+    const message = formatNewsMessage(news, 'Cricket');
+    bot.sendMessage(chatId, message, { 
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true 
+    });
   });
-});
 
-bot.onText(/\/pakistan/, async (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, '🤣 Getting Pakistani viral news...');
-  
-  const news = newsCache.filter(article => 
-    article.category === 'pakistan' || 
-    SEARCH_KEYWORDS.pakistan_viral.some(keyword => 
-      article.title.toLowerCase().includes(keyword.toLowerCase())
-    )
-  );
-  
-  const message = formatNewsMessage(news, 'Pakistani Viral');
-  bot.sendMessage(chatId, message, { 
-    parse_mode: 'Markdown',
-    disable_web_page_preview: true 
+  bot.onText(/\/national/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, '🇮🇳 Getting National news...');
+    
+    const news = newsCache.filter(article => 
+      article.category === 'national' || 
+      article.category === 'Indian News'
+    );
+    
+    const message = formatNewsMessage(news, 'National Breaking');
+    bot.sendMessage(chatId, message, { 
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true 
+    });
   });
-});
 
-bot.onText(/\/refresh/, async (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, '🔄 Force refreshing all news sources...');
-  
-  processedNews.clear();
-  const news = await aggregateNews();
-  
-  bot.sendMessage(chatId, `✅ Refreshed! Found ${news.length} new articles in the last 24 hours.`);
-});
+  bot.onText(/\/pakistan/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, '🤣 Getting Pakistani viral news...');
+    
+    const news = newsCache.filter(article => 
+      article.category === 'pakistan' || 
+      SEARCH_KEYWORDS.pakistan_viral.some(keyword => 
+        article.title.toLowerCase().includes(keyword.toLowerCase())
+      )
+    );
+    
+    const message = formatNewsMessage(news, 'Pakistani Viral');
+    bot.sendMessage(chatId, message, { 
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true 
+    });
+  });
+
+  bot.onText(/\/refresh/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, '🔄 Force refreshing all news sources...');
+    
+    processedNews.clear();
+    const news = await aggregateNews();
+    
+    bot.sendMessage(chatId, `✅ Refreshed! Found ${news.length} new articles in the last 24 hours.`);
+  });
+
+  // Error handling for bot
+  bot.on('polling_error', (error) => {
+    console.error('Telegram polling error:', error.message);
+  });
+
+  console.log('📱 Telegram Bot is active!');
+} else {
+  console.log('⚠️ Telegram Bot not initialized - missing BOT_TOKEN');
+  console.log('🌐 Running in API-only mode');
+}
 
 // Auto-refresh news every 2 hours
 setInterval(async () => {
@@ -459,17 +479,70 @@ app.get('/', (req, res) => {
   res.json({ 
     status: 'Bot is running!', 
     newsCount: newsCache.length,
-    lastUpdate: new Date().toISOString()
+    lastUpdate: new Date().toISOString(),
+    telegramBot: BOT_TOKEN ? 'Connected' : 'Not configured - missing BOT_TOKEN',
+    apiEndpoints: {
+      health: '/health',
+      news: '/api/news',
+      categories: '/api/news/:category'
+    }
   });
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', uptime: process.uptime() });
+  res.json({ 
+    status: 'healthy', 
+    uptime: process.uptime(),
+    newsAggregation: 'working',
+    telegramBot: BOT_TOKEN ? 'active' : 'inactive'
+  });
+});
+
+// API endpoints to access news data directly
+app.get('/api/news', async (req, res) => {
+  try {
+    if (newsCache.length === 0) {
+      await aggregateNews();
+    }
+    res.json({
+      total: newsCache.length,
+      lastUpdate: new Date().toISOString(),
+      news: newsCache.slice(0, 50) // Return first 50 items
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch news' });
+  }
+});
+
+app.get('/api/news/:category', async (req, res) => {
+  try {
+    const category = req.params.category.toLowerCase();
+    const filteredNews = newsCache.filter(article => 
+      article.category === category || 
+      (SEARCH_KEYWORDS[category] && 
+       SEARCH_KEYWORDS[category].some(keyword => 
+         article.title.toLowerCase().includes(keyword.toLowerCase())
+       ))
+    );
+    
+    res.json({
+      category,
+      total: filteredNews.length,
+      news: filteredNews.slice(0, 20)
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch category news' });
+  }
 });
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📱 Telegram Bot is active!`);
+  if (BOT_TOKEN) {
+    console.log(`📱 Telegram Bot is active!`);
+  } else {
+    console.log(`⚠️ Telegram Bot not active - Add BOT_TOKEN environment variable`);
+    console.log(`🌐 API endpoints available at http://localhost:${PORT}/api/news`);
+  }
 });
 
 // Error handling
