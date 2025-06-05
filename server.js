@@ -1,4 +1,506 @@
-const TelegramBot = require('node-telegram-bot-api');
+// Multiple sources for YouTuber content (NO YOUTUBE.COM direct access)
+const YOUTUBER_SOURCES = {
+  news_blogs: [
+    'https://www.socialsamosa.com',
+    'https://afaqs.com', 
+    'https://www.exchange4media.com',
+    'https://brandequity.economictimes.indiatimes.com',
+    'https://www.medianama.com',
+    'https://www.businesstoday.in',
+    'https://inc42.com'
+  ],
+  tech_blogs: [
+    'https://www.digit.in',
+    'https://gadgets.ndtv.com', 
+    'https://www.91mobiles.com',
+    'https://www.gizbot.com',
+    'https://www.techradar.com',
+    'https://indianexpress.com/section/technology'
+  ],
+  entertainment_sites: [
+    'https://www.bollywoodlife.com',
+    'https://www.pinkvilla.com',
+    'https://www.koimoi.com',
+    'https://www.filmfare.com',
+    'https://timesofindia.indiatimes.com/entertainment'
+  ]
+};
+
+// Enhanced multi-source YouTuber content fetching
+async function fetchYouTuberContentFromMultipleSources() {
+  const allContent = [];
+  
+  try {
+    console.log('🎥 Fetching YouTuber content from multiple sources...');
+    
+    // 1. Search specific YouTuber terms on news sites
+    const youtuberTerms = [
+      'CarryMinati news', 'Triggered Insaan latest', 'BB Ki Vines update',
+      'Ashish Chanchlani controversy', 'Technical Guruji review', 'Flying Beast vlog',
+      'Indian YouTuber earnings', 'YouTube creator milestone', 'content creator brand deal',
+      'social media influencer India', 'gaming streamer news', 'roasting video viral'
+    ];
+
+    for (const term of youtuberTerms.slice(0, 6)) { // Use 6 terms
+      try {
+        console.log(`   → Searching news sites for: ${term}`);
+        const results = await scrapeGoogleNews(term);
+        
+        // Filter for YouTuber-related content
+        const youtuberResults = results.filter(article => {
+          const content = `${article.title} ${article.description}`.toLowerCase();
+          return content.match(/youtube|youtuber|creator|streamer|gaming|viral|social media|influencer/);
+        }).map(article => ({
+          ...article,
+          category: 'youtubers',
+          source: article.source + ' (News)'
+        }));
+        
+        allContent.push(...youtuberResults);
+        console.log(`     ✅ Found ${youtuberResults.length} YouTuber articles for "${term}"`);
+        
+        await new Promise(resolve => setTimeout(resolve, 800));
+      } catch (error) {
+        console.error(`Error searching for ${term}:`, error.message);
+      }
+    }
+
+    // 2. Search Twitter mentions (via Google)
+    console.log('🐦 Searching Twitter for YouTuber mentions...');
+    try {
+      const twitterTerms = [
+        'CarryMinati site:twitter.com',
+        'TriggeredInsaan site:twitter.com', 
+        'BBKiVines site:twitter.com',
+        'TechnicalGuruji site:twitter.com'
+      ];
+
+      for (const term of twitterTerms.slice(0, 3)) {
+        try {
+          const results = await scrapeGoogleNews(term);
+          const twitterResults = results.map(result => ({
+            ...result,
+            title: `Twitter: ${result.title}`,
+            source: 'Twitter/X',
+            platform: 'twitter',
+            category: 'youtubers'
+          }));
+          
+          allContent.push(...twitterResults);
+          await new Promise(resolve => setTimeout(resolve, 800));
+        } catch (error) {
+          console.error(`Twitter search error for ${term}:`, error.message);
+        }
+      }
+    } catch (error) {
+      console.error('Twitter scraping error:', error.message);
+    }
+
+    // 3. Search Reddit for YouTuber discussions (via Google)
+    console.log('🔍 Searching Reddit for YouTuber discussions...');
+    try {
+      const redditTerms = [
+        'CarryMinati site:reddit.com',
+        'Indian YouTuber site:reddit.com',
+        'gaming creator India site:reddit.com'
+      ];
+
+      for (const term of redditTerms.slice(0, 2)) {
+        try {
+          const results = await scrapeGoogleNews(term);
+          const redditResults = results.map(result => ({
+            ...result,
+            title: `Reddit: ${result.title}`,
+            source: 'Reddit',
+            platform: 'reddit',
+            category: 'youtubers'
+          }));
+          
+          allContent.push(...redditResults);
+          await new Promise(resolve => setTimeout(resolve, 800));
+        } catch (error) {
+          console.error(`Reddit search error for ${term}:`, error.message);
+        }
+      }
+    } catch (error) {
+      console.error('Reddit scraping error:', error.message);
+    }
+
+    // 4. Search Instagram posts (via Google)
+    console.log('📸 Searching Instagram for YouTuber posts...');
+    try {
+      const instaTerms = [
+        'CarryMinati site:instagram.com',
+        'TriggeredInsaan site:instagram.com',
+        'Indian YouTuber site:instagram.com'
+      ];
+
+      for (const term of instaTerms.slice(0, 2)) {
+        try {
+          const results = await scrapeGoogleNews(term);
+          const instaResults = results.map(result => ({
+            ...result,
+            title: `Instagram: ${result.title}`,
+            source: 'Instagram',
+            platform: 'instagram', 
+            category: 'youtubers'
+          }));
+          
+          allContent.push(...instaResults);
+          await new Promise(resolve => setTimeout(resolve, 800));
+        } catch (error) {
+          console.error(`Instagram search error for ${term}:`, error.message);
+        }
+      }
+    } catch (error) {
+      console.error('Instagram scraping error:', error.message);
+    }
+
+    // Remove duplicates
+    const uniqueContent = allContent.filter((article, index, self) => {
+      const titleKey = article.title.toLowerCase().substring(0, 40);
+      return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
+    });
+
+// Enhanced multi-source content fetching for Bollywood
+async function fetchBollywoodContentFromMultipleSources() {
+  const allContent = [];
+  
+  try {
+    console.log('🎬 Fetching Bollywood content from multiple sources...');
+    
+    // 1. Bollywood-specific news terms
+    const bollywoodTerms = [
+      'Bollywood box office collection', 'Hindi film release', 'Mumbai film industry',
+      'celebrity wedding bollywood', 'film shooting updates', 'bollywood controversy',
+      'hindi movie trailer', 'bollywood gossip latest', 'film industry news india'
+    ];
+
+    for (const term of bollywoodTerms.slice(0, 5)) {
+      try {
+        console.log(`   → Searching entertainment sites for: ${term}`);
+        const results = await scrapeGoogleNews(term);
+        
+        const bollywoodResults = results.filter(article => {
+          const content = `${article.title} ${article.description}`.toLowerCase();
+          return content.match(/bollywood|hindi|film|movie|actor|actress|cinema|entertainment/);
+        }).map(article => ({
+          ...article,
+          category: 'bollywood',
+          source: article.source + ' (Entertainment)'
+        }));
+        
+        allContent.push(...bollywoodResults);
+        console.log(`     ✅ Found ${bollywoodResults.length} Bollywood articles for "${term}"`);
+        
+        await new Promise(resolve => setTimeout(resolve, 800));
+      } catch (error) {
+        console.error(`Error searching for ${term}:`, error.message);
+      }
+    }
+
+    // 2. Celebrity Twitter mentions
+    console.log('🐦 Searching Twitter for Bollywood celebrity mentions...');
+    const celebrities = ['iamsrk', 'BeingSalmanKhan', 'aliaa08', 'RanveerOfficial'];
+    
+    for (const celeb of celebrities.slice(0, 3)) {
+      try {
+        const results = await scrapeGoogleNews(`${celeb} site:twitter.com`);
+        const twitterResults = results.map(result => ({
+          ...result,
+          title: `Twitter: ${result.title}`,
+          source: 'Twitter/X',
+          platform: 'twitter',
+          category: 'bollywood'
+        }));
+        
+        allContent.push(...twitterResults);
+        await new Promise(resolve => setTimeout(resolve, 800));
+      } catch (error) {
+        console.error(`Twitter search error for ${celeb}:`, error.message);
+      }
+    }
+
+    // 3. Instagram celebrity posts
+    console.log('📸 Searching Instagram for Bollywood posts...');
+    const instaTerms = ['Bollywood site:instagram.com', 'Hindi film site:instagram.com'];
+    
+    for (const term of instaTerms) {
+      try {
+        const results = await scrapeGoogleNews(term);
+        const instaResults = results.map(result => ({
+          ...result,
+          title: `Instagram: ${result.title}`,
+          source: 'Instagram',
+          platform: 'instagram',
+          category: 'bollywood'
+        }));
+        
+        allContent.push(...instaResults);
+        await new Promise(resolve => setTimeout(resolve, 800));
+      } catch (error) {
+        console.error(`Instagram search error for ${term}:`, error.message);
+      }
+    }
+
+    // Remove duplicates
+    const uniqueContent = allContent.filter((article, index, self) => {
+      const titleKey = article.title.toLowerCase().substring(0, 40);
+      return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
+    });
+
+    console.log(`✅ Multi-source Bollywood content: ${uniqueContent.length} unique articles found`);
+    return uniqueContent;
+
+  } catch (error) {
+    console.error('❌ Multi-source Bollywood content error:', error.message);
+    return [];
+  }
+}
+
+// Enhanced multi-source content fetching for Cricket
+async function fetchCricketContentFromMultipleSources() {
+  const allContent = [];
+  
+  try {
+    console.log('🏏 Fetching Cricket content from multiple sources...');
+    
+    // 1. Cricket-specific news terms
+    const cricketTerms = [
+      'India cricket team selection', 'IPL auction updates', 'cricket world cup india',
+      'BCCI announcement latest', 'indian cricket controversy', 'cricket match highlights',
+      'cricket player injury update', 'cricket coaching changes', 'cricket stadium news'
+    ];
+
+    for (const term of cricketTerms.slice(0, 5)) {
+      try {
+        console.log(`   → Searching sports sites for: ${term}`);
+        const results = await scrapeGoogleNews(term);
+        
+        const cricketResults = results.filter(article => {
+          const content = `${article.title} ${article.description}`.toLowerCase();
+          return content.match(/cricket|ipl|bcci|wicket|batting|bowling|match|team india|sports/);
+        }).map(article => ({
+          ...article,
+          category: 'cricket',
+          source: article.source + ' (Sports)'
+        }));
+        
+        allContent.push(...cricketResults);
+        console.log(`     ✅ Found ${cricketResults.length} Cricket articles for "${term}"`);
+        
+        await new Promise(resolve => setTimeout(resolve, 800));
+      } catch (error) {
+        console.error(`Error searching for ${term}:`, error.message);
+      }
+    }
+
+    // 2. Player Twitter mentions
+    console.log('🐦 Searching Twitter for Cricket player mentions...');
+    const players = ['imVkohli', 'ImRo45', 'msdhoni', 'hardikpandya7'];
+    
+    for (const player of players.slice(0, 3)) {
+      try {
+        const results = await scrapeGoogleNews(`${player} site:twitter.com`);
+        const twitterResults = results.map(result => ({
+          ...result,
+          title: `Twitter: ${result.title}`,
+          source: 'Twitter/X',
+          platform: 'twitter',
+          category: 'cricket'
+        }));
+        
+        allContent.push(...twitterResults);
+        await new Promise(resolve => setTimeout(resolve, 800));
+      } catch (error) {
+        console.error(`Twitter search error for ${player}:`, error.message);
+      }
+    }
+
+    // 3. Cricket Instagram posts
+    console.log('📸 Searching Instagram for Cricket posts...');
+    const instaTerms = ['Team India site:instagram.com', 'IPL cricket site:instagram.com'];
+    
+    for (const term of instaTerms) {
+      try {
+        const results = await scrapeGoogleNews(term);
+        const instaResults = results.map(result => ({
+          ...result,
+          title: `Instagram: ${result.title}`,
+          source: 'Instagram',
+          platform: 'instagram',
+          category: 'cricket'
+        }));
+        
+        allContent.push(...instaResults);
+        await new Promise(resolve => setTimeout(resolve, 800));
+      } catch (error) {
+        console.error(`Instagram search error for ${term}:`, error.message);
+      }
+    }
+
+    // Remove duplicates
+    const uniqueContent = allContent.filter((article, index, self) => {
+      const titleKey = article.title.toLowerCase().substring(0, 40);
+      return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
+    });
+
+    console.log(`✅ Multi-source Cricket content: ${uniqueContent.length} unique articles found`);
+    return uniqueContent;
+
+  } catch (error) {
+    console.error('❌ Multi-source Cricket content error:', error.message);
+    return [];
+  }
+}
+
+// Enhanced multi-source content fetching for National News
+async function fetchNationalContentFromMultipleSources() {
+  const allContent = [];
+  
+  try {
+    console.log('🇮🇳 Fetching National content from multiple sources...');
+    
+    // 1. National news-specific terms
+    const nationalTerms = [
+      'Indian government policy update', 'Delhi assembly news', 'Mumbai development project',
+      'Supreme Court India judgment', 'Parliament session india', 'Modi announcement',
+      'Indian economy update', 'infrastructure development india', 'education policy india'
+    ];
+
+    for (const term of nationalTerms.slice(0, 5)) {
+      try {
+        console.log(`   → Searching news sites for: ${term}`);
+        const results = await scrapeGoogleNews(term);
+        
+        const nationalResults = results.filter(article => {
+          const content = `${article.title} ${article.description}`.toLowerCase();
+          return content.match(/india|indian|delhi|mumbai|government|modi|parliament|supreme court|policy/);
+        }).map(article => ({
+          ...article,
+          category: 'national',
+          source: article.source + ' (National)'
+        }));
+        
+        allContent.push(...nationalResults);
+        console.log(`     ✅ Found ${nationalResults.length} National articles for "${term}"`);
+        
+        await new Promise(resolve => setTimeout(resolve, 800));
+      } catch (error) {
+        console.error(`Error searching for ${term}:`, error.message);
+      }
+    }
+
+    // 2. Political Twitter mentions
+    console.log('🐦 Searching Twitter for Political mentions...');
+    const politicians = ['narendramodi', 'RahulGandhi', 'ArvindKejriwal'];
+    
+    for (const politician of politicians.slice(0, 2)) {
+      try {
+        const results = await scrapeGoogleNews(`${politician} site:twitter.com`);
+        const twitterResults = results.map(result => ({
+          ...result,
+          title: `Twitter: ${result.title}`,
+          source: 'Twitter/X',
+          platform: 'twitter',
+          category: 'national'
+        }));
+        
+        allContent.push(...twitterResults);
+        await new Promise(resolve => setTimeout(resolve, 800));
+      } catch (error) {
+        console.error(`Twitter search error for ${politician}:`, error.message);
+      }
+    }
+
+    // Remove duplicates
+    const uniqueContent = allContent.filter((article, index, self) => {
+      const titleKey = article.title.toLowerCase().substring(0, 40);
+      return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
+    });
+
+    console.log(`✅ Multi-source National content: ${uniqueContent.length} unique articles found`);
+    return uniqueContent;
+
+  } catch (error) {
+    console.error('❌ Multi-source National content error:', error.message);
+    return [];
+  }
+}
+
+// Enhanced multi-source content fetching for Pakistan News
+async function fetchPakistanContentFromMultipleSources() {
+  const allContent = [];
+  
+  try {
+    console.log('🇵🇰 Fetching Pakistan content from multiple sources...');
+    
+    // 1. Pakistan-specific news terms
+    const pakistanTerms = [
+      'Pakistan political update', 'Karachi city news', 'Lahore development',
+      'Pakistani cricket team', 'Pakistan economy news', 'Pakistan viral trend',
+      'Pakistani entertainment industry', 'Pakistan social media', 'Pakistan current affairs'
+    ];
+
+    for (const term of pakistanTerms.slice(0, 5)) {
+      try {
+        console.log(`   → Searching regional sites for: ${term}`);
+        const results = await scrapeGoogleNews(term);
+        
+        const pakistanResults = results.filter(article => {
+          const content = `${article.title} ${article.description}`.toLowerCase();
+          return content.match(/pakistan|pakistani|karachi|lahore|islamabad|imran khan/);
+        }).map(article => ({
+          ...article,
+          category: 'pakistan',
+          source: article.source + ' (Regional)'
+        }));
+        
+        allContent.push(...pakistanResults);
+        console.log(`     ✅ Found ${pakistanResults.length} Pakistan articles for "${term}"`);
+        
+        await new Promise(resolve => setTimeout(resolve, 800));
+      } catch (error) {
+        console.error(`Error searching for ${term}:`, error.message);
+      }
+    }
+
+    // 2. Pakistan Twitter trends
+    console.log('🐦 Searching Twitter for Pakistan trends...');
+    const twitterTerms = ['Pakistan trending site:twitter.com', 'Pakistani viral site:twitter.com'];
+    
+    for (const term of twitterTerms) {
+      try {
+        const results = await scrapeGoogleNews(term);
+        const twitterResults = results.map(result => ({
+          ...result,
+          title: `Twitter: ${result.title}`,
+          source: 'Twitter/X',
+          platform: 'twitter',
+          category: 'pakistan'
+        }));
+        
+        allContent.push(...twitterResults);
+        await new Promise(resolve => setTimeout(resolve, 800));
+      } catch (error) {
+        console.error(`Twitter search error for ${term}:`, error.message);
+      }
+    }
+
+    // Remove duplicates
+    const uniqueContent = allContent.filter((article, index, self) => {
+      const titleKey = article.title.toLowerCase().substring(0, 40);
+      return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
+    });
+
+    console.log(`✅ Multi-source Pakistan content: ${uniqueContent.length} unique articles found`);
+    return uniqueContent;
+
+  } catch (error) {
+    console.error('❌ Multi-source Pakistan content error:', error.message);
+    return [];
+  }
+}const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const express = require('express');
@@ -182,19 +684,46 @@ async function scrapeGoogleNews(query) {
   }
 }
 
-// Fetch ALL news for category using ALL keywords (FIXED)
-async function fetchAllNews(category) {
+// Enhanced YouTuber news fetching with category-specific multi-source strategy
+async function fetchAllNewsEnhanced(category) {
   const allArticles = [];
   
   try {
-    const keywords = SEARCH_KEYWORDS[category] || [];
-    console.log(`🔍 Searching ${category} with ALL ${keywords.length} keywords...`);
+    // Category-specific enhanced multi-source fetching
+    if (category === 'youtubers') {
+      console.log(`🎥 Enhanced YouTuber content fetching from multiple sources...`);
+      const multiSourceContent = await fetchYouTuberContentFromMultipleSources();
+      allArticles.push(...multiSourceContent);
+      
+    } else if (category === 'bollywood') {
+      console.log(`🎬 Enhanced Bollywood content fetching from multiple sources...`);
+      const multiSourceContent = await fetchBollywoodContentFromMultipleSources();
+      allArticles.push(...multiSourceContent);
+      
+    } else if (category === 'cricket') {
+      console.log(`🏏 Enhanced Cricket content fetching from multiple sources...`);
+      const multiSourceContent = await fetchCricketContentFromMultipleSources();
+      allArticles.push(...multiSourceContent);
+      
+    } else if (category === 'national') {
+      console.log(`🇮🇳 Enhanced National content fetching from multiple sources...`);
+      const multiSourceContent = await fetchNationalContentFromMultipleSources();
+      allArticles.push(...multiSourceContent);
+      
+    } else if (category === 'pakistan') {
+      console.log(`🇵🇰 Enhanced Pakistan content fetching from multiple sources...`);
+      const multiSourceContent = await fetchPakistanContentFromMultipleSources();
+      allArticles.push(...multiSourceContent);
+    }
     
-    // Use ALL keywords, not just first 3
+    // Regular keyword search as backup for ALL categories
+    const keywords = SEARCH_KEYWORDS[category] || [];
+    console.log(`🔍 Backup search with ${keywords.length} keywords...`);
+    
     for (let i = 0; i < keywords.length; i++) {
       const keyword = keywords[i];
       try {
-        console.log(`   → Searching ${i+1}/${keywords.length}: ${keyword}`);
+        console.log(`   → Backup search ${i+1}/${keywords.length}: ${keyword}`);
         const articles = await scrapeGoogleNews(keyword);
         
         const categoryArticles = articles.filter(article => 
@@ -202,12 +731,11 @@ async function fetchAllNews(category) {
         );
         
         allArticles.push(...categoryArticles);
-        console.log(`     ✅ Found ${categoryArticles.length} articles for "${keyword}"`);
+        console.log(`     ✅ Backup found ${categoryArticles.length} articles for "${keyword}"`);
         
-        // Small delay between requests
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 600));
       } catch (error) {
-        console.error(`❌ Error with keyword "${keyword}":`, error.message);
+        console.error(`❌ Backup error with keyword "${keyword}":`, error.message);
       }
     }
 
@@ -217,11 +745,11 @@ async function fetchAllNews(category) {
       return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
     });
 
-    console.log(`✅ ${category}: ${uniqueArticles.length} unique articles from ${keywords.length} keywords`);
+    console.log(`✅ ${category}: ${uniqueArticles.length} unique articles from enhanced multi-source search`);
     return uniqueArticles;
     
   } catch (error) {
-    console.error(`❌ fetchAllNews error for ${category}:`, error.message);
+    console.error(`❌ Enhanced search error for ${category}:`, error.message);
     return [];
   }
 }
@@ -402,7 +930,7 @@ async function aggregateNews() {
       try {
         console.log(`🔍 Fetching ALL ${category} news...`);
         
-        const categoryNews = await fetchAllNews(category);
+        const categoryNews = await fetchAllNewsEnhanced(category);
         
         if (categoryNews.length > 0) {
           allNews.push(...categoryNews);
@@ -549,7 +1077,7 @@ if (bot) {
     
     if (youtuberNews.length === 0) {
       bot.sendMessage(chatId, '🔄 Fetching fresh content...');
-      const freshNews = await fetchAllNews('youtubers');
+      const freshNews = await fetchAllNewsEnhanced('youtubers');
       youtuberNews = freshNews.length > 0 ? freshNews : createFallbackContent('youtubers');
       newsCache.push(...youtuberNews);
     }
@@ -590,7 +1118,7 @@ if (bot) {
     let bollywoodNews = newsCache.filter(article => article.category === 'bollywood');
     
     if (bollywoodNews.length === 0) {
-      const freshNews = await fetchAllNews('bollywood');
+      const freshNews = await fetchAllNewsEnhanced('bollywood');
       bollywoodNews = freshNews.length > 0 ? freshNews : createFallbackContent('bollywood');
     }
     
@@ -607,7 +1135,7 @@ if (bot) {
     
     if (nationalNews.length === 0) {
       bot.sendMessage(chatId, '🔄 Fetching fresh national content...');
-      const freshNews = await fetchAllNews('national');
+      const freshNews = await fetchAllNewsEnhanced('national');
       nationalNews = freshNews.length > 0 ? freshNews : createFallbackContent('national');
       newsCache.push(...nationalNews);
     }
@@ -625,7 +1153,7 @@ if (bot) {
     
     if (pakistanNews.length === 0) {
       bot.sendMessage(chatId, '🔄 Fetching fresh Pakistan content...');
-      const freshNews = await fetchAllNews('pakistan');
+      const freshNews = await fetchAllNewsEnhanced('pakistan');
       pakistanNews = freshNews.length > 0 ? freshNews : createFallbackContent('pakistan');
       newsCache.push(...pakistanNews);
     }
