@@ -257,12 +257,12 @@ async function searchMultiplePlatforms(searchTerm) {
   }
 }
 
-// Enhanced category-specific content fetching
+// Enhanced category-specific content fetching with multi-platform support for ALL categories
 async function fetchEnhancedContent(category) {
   const allArticles = [];
   
   try {
-    console.log(`🎯 Enhanced ${category} content fetching...`);
+    console.log(`🎯 Enhanced ${category} content fetching with multi-platform search...`);
     
     // Category-specific enhanced terms
     const enhancedTerms = {
@@ -288,9 +288,43 @@ async function fetchEnhancedContent(category) {
       ]
     };
 
+    // Category-specific multi-platform search terms
+    const multiPlatformTerms = {
+      youtubers: ['Elvish Yadav', 'CarryMinati', 'Triggered Insaan'],
+      bollywood: ['Salman Khan', 'Shah Rukh Khan', 'Alia Bhatt'],
+      cricket: ['Virat Kohli', 'Rohit Sharma', 'MS Dhoni'],
+      national: ['Narendra Modi', 'Rahul Gandhi', 'Delhi news'],
+      pakistan: ['Pakistan trending', 'Imran Khan', 'Karachi news']
+    };
+
     const terms = enhancedTerms[category] || [];
+    const platformTerms = multiPlatformTerms[category] || [];
     
-    for (const term of terms.slice(0, 4)) {
+    // MULTI-PLATFORM SEARCH for all categories
+    console.log(`🌐 Multi-platform search for ${category}...`);
+    
+    for (const term of platformTerms.slice(0, 2)) { // Use 2 terms to avoid timeout
+      try {
+        console.log(`   → Multi-platform search for: ${term}`);
+        const multiResults = await searchMultiplePlatforms(term);
+        
+        // Filter for category-related content
+        const categoryResults = multiResults.filter(article => 
+          article.category === category || categorizeNews(article.title, article.description) === category
+        );
+        
+        allArticles.push(...categoryResults);
+        console.log(`     ✅ Multi-platform found ${categoryResults.length} articles for "${term}"`);
+        
+        await new Promise(resolve => setTimeout(resolve, 1200));
+      } catch (error) {
+        console.error(`Multi-platform error for ${term}:`, error.message);
+      }
+    }
+    
+    // ENHANCED TERMS SEARCH
+    console.log(`🎯 Enhanced terms search for ${category}...`);
+    for (const term of terms.slice(0, 3)) { // Reduced to 3 to save time
       try {
         console.log(`   → Enhanced search: ${term}`);
         const articles = await scrapeGoogleNews(term);
@@ -308,14 +342,14 @@ async function fetchEnhancedContent(category) {
       }
     }
     
-    // Regular keyword search as backup
+    // BACKUP KEYWORD SEARCH
     const keywords = SEARCH_KEYWORDS[category] || [];
     console.log(`🔍 Backup search with ${keywords.length} keywords...`);
     
-    for (let i = 0; i < keywords.length; i++) {
+    for (let i = 0; i < Math.min(keywords.length, 4); i++) { // Limit to 4 keywords
       const keyword = keywords[i];
       try {
-        console.log(`   → Backup ${i+1}/${keywords.length}: ${keyword}`);
+        console.log(`   → Backup ${i+1}/${Math.min(keywords.length, 4)}: ${keyword}`);
         const articles = await scrapeGoogleNews(keyword);
         
         const categoryArticles = articles.filter(article => 
@@ -337,7 +371,8 @@ async function fetchEnhancedContent(category) {
       return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
     });
 
-    console.log(`✅ ${category}: ${uniqueArticles.length} unique articles from enhanced search`);
+    console.log(`✅ ${category}: ${uniqueArticles.length} unique articles from MULTI-PLATFORM enhanced search`);
+    console.log(`📊 Sources used: Multi-platform + Enhanced terms + Backup keywords`);
     return uniqueArticles;
     
   } catch (error) {
