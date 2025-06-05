@@ -1,406 +1,580 @@
-# 🔥 Viral News Telegram Bot
+# 🔥 Enhanced Viral News Bot v3.0
 
-A **100% FREE** Telegram bot that aggregates the latest viral and controversial news from Indian YouTubers, Bollywood celebrities, cricketers, national breaking news, and funny Pakistani content - all without using any paid APIs!
+**Advanced Telegram News Bot with Content Scoring, Webhooks, Moderation & Analytics - Perfect for YouTube News Channels**
 
-## 🚀 Features
+## 🚀 Key Features
 
-- **Real-time News Aggregation** from multiple sources
-- **24-Hour Filter** - Only shows news from the last 24 hours
-- **Zero Paid APIs** - Uses free scraping methods only
-- **Duplicate Prevention** - Smart filtering to avoid repeated news
-- **Category-wise News** - Organized by YouTubers, Bollywood, Cricket, etc.
-- **Auto-refresh** - Updates news every 2 hours
-- **Engagement Metrics** - Shows likes and retweets for viral content
+### ✅ **All Your Requested Features Implemented:**
+- **🌐 Webhooks** instead of polling (faster, efficient, saves bandwidth)
+- **🧪 Unit Tests** with Jest (comprehensive test coverage)
+- **🛡️ Content Moderation** (filters profanity, slurs, fake news)
+- **📊 Content Scoring System** (Spice, Conspiracy, Importance levels)
+- **⚡ Rate Limiting** (prevents abuse)
 
-## 📱 Supported Categories
+### 🎯 **Perfect for YouTube News Channels:**
+- **🌶️ Spicy Content Focus** - Drama, controversies, exposés
+- **🕵️ Conspiracy Content** - Hidden truths, secrets, cover-ups
+- **⚡ Breaking News** - Important, urgent, crisis content
+- **📱 Multi-Platform** - News, Twitter, Instagram, YouTube
+- **🔗 Working Links** - Direct, verified, non-broken URLs
 
-### 🎥 Indian YouTubers (50+ tracked)
-- CarryMinati, Elvish Yadav, Triggered Insaan, BB Ki Vines
-- Ashish Chanchlani, Techno Gamerz, Dhruv Rathee, ScoutOP
-- Total Gaming, Flying Beast, Slayy Point, and many more
+### 📊 **Advanced Scoring System:**
+- **Spice Score (1-10):** Drama, controversy, fights, scandals
+- **Conspiracy Score (1-10):** Secrets, exposés, hidden agendas
+- **Importance Score (1-10):** Breaking news, urgent updates
+- **Total Score:** Combined score for ranking content
 
-### 🎬 Bollywood Celebrities
-- Salman Khan, Shah Rukh Khan, Alia Bhatt, Ranveer Singh
-- Katrina Kaif, Akshay Kumar, Kiara Advani, and others
+## 🛠️ **Installation & Setup**
 
-### 🏏 Indian Cricket Stars
-- Virat Kohli, Rohit Sharma, MS Dhoni, Hardik Pandya
-- Rishabh Pant, KL Rahul, Jasprit Bumrah, and more
-
-### 📰 National Breaking News
-- Supreme Court verdicts, Parliament sessions
-- Breaking incidents, government announcements
-- Major national events and controversies
-
-### 🤣 Pakistani Viral Content
-- Funny political gaffes and viral moments
-- Pakistani YouTubers and content creators
-- Trending memes and social media content
-
-## 🛠️ Technology Stack
-
-- **Node.js** with Express for the server
-- **node-telegram-bot-api** for Telegram integration
-- **Axios + Cheerio** for web scraping
-- **snscrape** for Twitter data (no API key needed)
-- **Google News RSS** for trending stories
-
-## 📝 Bot Commands
-
-```
-/start     - Welcome message and instructions
-/latest    - Get all latest viral news (last 24 hours)
-/youtubers - YouTuber-specific news only
-/bollywood - Bollywood celebrity news only
-/cricket   - Indian cricket news only
-/national  - National breaking news only
-/pakistan  - Pakistani viral and funny news
-/refresh   - Force refresh all news sources
-```
-
-## 🚀 Quick Setup & Deployment
-
-### 1. Create Your Telegram Bot
-
-1. Message [@BotFather](https://t.me/botfather) on Telegram
-2. Send `/newbot` and follow the instructions
-3. Save your bot token - you'll need it for deployment
-
-### 2. Deploy on Render (100% Free)
-
-#### Method 1: One-Click Deploy
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
-
-#### Method 2: Manual Deploy
-
-1. **Fork this repository** to your GitHub account
-
-2. **Create a new Web Service** on [Render](https://render.com):
-   - Connect your GitHub repository
-   - Choose the forked repo
-   - Set **Build Command**: `npm install`
-   - Set **Start Command**: `npm start`
-
-3. **Add Environment Variable**:
-   - Key: `BOT_TOKEN`
-   - Value: Your bot token from BotFather
-
-4. **Deploy** - Render will automatically build and deploy your bot!
-
-### 3. Install snscrape (Twitter Scraping)
-
-The bot uses snscrape for Twitter data. Render will automatically install it, but if you're running locally:
-
+### **1. Prerequisites**
 ```bash
-# Install snscrape
-pip install snscrape
+# Node.js 14+ required
+node --version
 
-# Or using conda
-conda install -c conda-forge snscrape
+# Create project directory
+mkdir enhanced-news-bot
+cd enhanced-news-bot
 ```
 
-### 4. Local Development
-
+### **2. Install Dependencies**
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/viral-news-bot.git
-cd viral-news-bot
+# Install all dependencies
+npm install
+
+# Or install manually:
+npm install node-telegram-bot-api axios cheerio express express-rate-limit winston sqlite3 bad-words dotenv helmet cors compression
+
+# Dev dependencies
+npm install --save-dev jest supertest nodemon eslint @babel/preset-env babel-jest
+```
+
+### **3. Environment Setup**
+Create `.env` file:
+```env
+# Required
+BOT_TOKEN=your_telegram_bot_token_here
+NODE_ENV=production
+
+# Optional (for Render deployment)
+RENDER_EXTERNAL_URL=https://your-app.onrender.com
+RENDER_SERVICE_NAME=your-service-name
+PORT=3000
+
+# Database (optional - uses SQLite by default)
+DATABASE_URL=sqlite:./enhanced_news_bot.db
+
+# Logging
+LOG_LEVEL=info
+```
+
+### **4. Get Telegram Bot Token**
+1. Message [@BotFather](https://t.me/BotFather) on Telegram
+2. Send `/newbot`
+3. Choose bot name and username
+4. Copy the token to `.env` file
+
+### **5. Webhook Setup (Production)**
+The bot automatically sets up webhooks when `NODE_ENV=production`:
+
+```javascript
+// Webhook URL format:
+https://your-domain.com/webhook/YOUR_BOT_TOKEN
+```
+
+For **Render.com** deployment:
+1. Connect your GitHub repo
+2. Set environment variables
+3. Deploy - webhooks configure automatically
+
+## 🔧 **Usage Commands**
+
+### **📰 Main News Commands:**
+```
+/youtubers - Spicy YouTuber drama & conspiracy
+/bollywood - Celebrity scandals & secrets  
+/cricket - Sports controversies & match fixing
+/national - Political drama & government exposés
+/pakistan - Pakistani conspiracy & crisis content
+/latest - Top-scored content from all categories
+```
+
+### **🔍 Advanced Search:**
+```
+/search <term> - Multi-platform scored search
+/spicy <term> - High controversy content only (6+ spice score)
+/conspiracy <term> - Conspiracy-focused search (5+ conspiracy score)
+```
+
+### **🛠️ Management:**
+```
+/addkeyword <category> <keyword> - Add custom keywords
+/listkeywords - Show all your keywords
+/mystats - Your usage statistics  
+/settings - Bot configuration info
+/refresh - Force refresh all sources (rate limited)
+```
+
+### **📊 Example Commands:**
+```
+/addkeyword youtubers CarryMinati controversy
+/addkeyword bollywood nepotism scandal
+/spicy Elvish Yadav drama
+/conspiracy Bollywood illuminati
+/search YouTube algorithm manipulation
+```
+
+## 🧪 **Testing**
+
+### **Run All Tests:**
+```bash
+# Run complete test suite
+npm test
+
+# Run with coverage report
+npm run test:coverage
+
+# Watch mode for development
+npm run test:watch
+```
+
+### **Test Categories:**
+- ✅ News aggregation functionality
+- ✅ Content scoring system  
+- ✅ Content moderation filters
+- ✅ Duplicate removal logic
+- ✅ Database operations
+- ✅ Rate limiting enforcement
+- ✅ API endpoints
+- ✅ Error handling
+- ✅ Performance tests
+
+### **Example Test Output:**
+```bash
+ PASS  tests/newsBot.test.js
+  Enhanced News Bot Tests
+    ✓ should aggregate news from multiple sources
+    ✓ should calculate spice score correctly  
+    ✓ should filter profanity correctly
+    ✓ should remove duplicate articles
+    ✓ should categorize content properly
+    ✓ should enforce rate limits
+
+Test Suites: 1 passed, 1 total
+Tests: 25 passed, 25 total
+Coverage: 85%+ on critical functions
+```
+
+## 📊 **Content Scoring Examples**
+
+### **🌶️ High Spice Content (8-10):**
+- "YouTuber EXPOSED in Major Scandal"
+- "Bollywood Affair Controversy Erupts"  
+- "Cricket Match Fixing Drama Unfolds"
+
+### **🕵️ High Conspiracy (7-10):**
+- "Government Cover-up Revealed"
+- "Secret YouTube Algorithm Exposed"
+- "Hidden Truth Behind Celebrity Death"
+
+### **⚡ High Importance (8-10):**
+- "BREAKING: Emergency Declared"
+- "URGENT: Major Policy Change"
+- "ALERT: Crisis Situation Develops"
+
+## 🛡️ **Content Moderation**
+
+### **Automatically Filters:**
+- ❌ Profanity and slurs
+- ❌ Obvious fake news patterns
+- ❌ Spam content
+- ❌ Content older than 24 hours
+- ❌ Duplicate articles
+- ❌ Suspicious clickbait
+
+### **Moderation Example:**
+```javascript
+Input: "You won't believe this bullshit fake news"
+Output: 🚫 Filtered (profanity + suspicious pattern)
+
+Input: "Breaking: Political scandal exposed"  
+Output: ✅ Approved (spice: 7, importance: 8)
+```
+
+## 🚀 **Deployment**
+
+### **Render.com (Recommended):**
+1. Fork this repository
+2. Connect to Render.com
+3. Set environment variables:
+   - `BOT_TOKEN=your_token`
+   - `NODE_ENV=production`
+4. Deploy - webhooks auto-configure
+
+### **Heroku:**
+```bash
+# Install Heroku CLI
+heroku create your-bot-name
+heroku config:set BOT_TOKEN=your_token
+heroku config:set NODE_ENV=production
+git push heroku main
+```
+
+### **VPS/Server:**
+```bash
+# Using PM2
+npm install -g pm2
+pm2 start server.js --name "news-bot"
+pm2 save
+pm2 startup
+```
+
+## 📈 **Monitoring & Analytics**
+
+### **Built-in Endpoints:**
+```
+GET / - Bot status and statistics
+GET /health - Health check for monitoring  
+GET /analytics - Detailed analytics data
+GET /ping - Simple ping/pong test
+```
+
+### **Analytics Data:**
+- 📊 Total requests & success rate
+- ⏱️ Average response times
+- 🌶️ Content score distributions  
+- 👥 Active users & rate limits
+- 💾 Memory usage & performance
+- 📱 Command usage statistics
+
+### **Example Analytics:**
+```json
+{
+  "bot": {
+    "totalRequests": 1250,
+    "successRate": "94.2%",
+    "averageResponseTime": "2.3s"
+  },
+  "content": {
+    "totalArticles": 1840,
+    "averageScore": "16.7/30",
+    "spicyCount": 420,
+    "conspiracyCount": 180
+  }
+}
+```
+
+## 🎬 **YouTube Channel Integration**
+
+### **Perfect Content for Your Channel:**
+1. **High-Score Articles** (20+ total score) = Viral potential
+2. **Spicy Drama** (7+ spice) = High engagement  
+3. **Conspiracy Content** (6+ conspiracy) = Click magnets
+4. **Breaking News** (8+ importance) = Trending topics
+5. **Multi-Platform Coverage** = Comprehensive stories
+
+### **Content Strategy Tips:**
+```
+🎯 Focus on articles with total score 18+
+🌶️ Prioritize spicy drama for thumbnails
+🕵️ Use conspiracy content for intrigue
+⚡ Cover breaking news for timing
+📱 Cross-reference social media buzz
+```
+
+### **Daily Workflow:**
+1. **Morning:** `/refresh` for latest content
+2. **Filter:** Use `/spicy` and `/conspiracy` commands  
+3. **Research:** Check highest-scored articles
+4. **Create:** Use top stories for video scripts
+5. **Track:** Monitor `/mystats` for trending patterns
+
+## 🛠️ **Advanced Configuration**
+
+### **Custom Keywords for Better Results:**
+```bash
+# Add spicy YouTuber keywords
+/addkeyword youtubers "MrBeast controversy"
+/addkeyword youtubers "PewDiePie drama"
+/addkeyword youtubers "creator exposed"
+
+# Add Bollywood scandal keywords  
+/addkeyword bollywood "casting couch scandal"
+/addkeyword bollywood "celebrity affair exposed"
+/addkeyword bollywood "Bollywood mafia revealed"
+
+# Add conspiracy keywords
+/addkeyword national "government cover up"
+/addkeyword national "political conspiracy"
+/addkeyword national "election manipulation"
+```
+
+### **Rate Limiting Configuration:**
+- **10 requests per hour** per command per user
+- **Refresh limited** to prevent abuse
+- **Search commands** have separate limits
+- **Rate reset** every hour automatically
+
+### **Database Schema:**
+```sql
+-- User keywords with priority
+user_keywords: user_id, category, keyword, priority
+
+-- User preferences  
+user_preferences: user_id, spicy_level, conspiracy_mode
+
+-- News cache with scores
+news_cache: title, url, spice_score, conspiracy_score, importance_score
+
+-- Analytics tracking
+bot_analytics: user_id, command, response_time, success
+```
+
+## 🔧 **Development**
+
+### **Local Development:**
+```bash
+# Clone repository
+git clone https://github.com/your-username/enhanced-viral-news-bot.git
+cd enhanced-viral-news-bot
 
 # Install dependencies
 npm install
 
-# Create .env file
-echo "BOT_TOKEN=your_bot_token_here" > .env
+# Set up environment
+cp .env.example .env
+# Edit .env with your bot token
 
-# Run the bot
-npm start
+# Run in development mode (polling)
+npm run dev
+
+# Run tests
+npm test
 ```
 
-## 📊 News Sources
-
-### 🌐 Web Scraping Sources
-- **Google News RSS** - For trending searches
-- **NDTV.com** - Indian breaking news
-- **AajTak.in** - Hindi news and updates  
-- **ABP Live** - National and regional news
-
-### 🐦 Twitter Handles Monitored
-
-**YouTubers**: @CarryMinati, @ashchanchlani, @TriggeredInsaan, @ElvishYadav, @BBkvines, @TechnoGamerz123, @dhruv_rathee, @ScoutOP, @totalgaming093, @flyingbeast320
-
-**Bollywood**: @BeingSalmanKhan, @iamsrk, @TheAaryanKartik, @RanveerOfficial, @akshaykumar, @aliaa08, @kritisanon
-
-**Cricket**: @imVkohli, @ImRo45, @hardikpandya7, @ShubmanGill, @RishabhPant17, @klrahul, @Jaspritbumrah93, @msdhoni
-
-**News Outlets**: @aajtak, @ndtv, @ABPNews, @republic, @ANI, @IndiaToday, @timesofindia
-
-**Pakistani**: @GeoNewsOfficial, @Dawn_News, @FawadChaudhry, @ImranKhanPTI, @CBA_Arslan, @NadirAliPodcast
-
-## ⚡ Performance Features
-
-- **Smart Caching** - Stores processed news to avoid duplicates
-- **Rate Limiting** - Respectful scraping with delays
-- **Error Handling** - Continues working even if some sources fail
-- **Auto-refresh** - Updates news every 2 hours automatically
-- **Health Monitoring** - Built-in health check endpoints
-
-## 🔧 Configuration
-
-The bot can be customized by modifying the constants in `server.js`:
-
-```javascript
-// Add more news sources
-const NEWS_SOURCES = {
-  indian_news: [
-    'https://www.ndtv.com/latest',
-    'https://your-news-site.com'  // Add your preferred site
-  ]
-};
-
-// Add more search keywords
-const SEARCH_KEYWORDS = {
-  youtubers: [
-    'Your Favorite YouTuber controversy'  // Add custom searches
-  ]
-};
+### **Project Structure:**
+```
+enhanced-viral-news-bot/
+├── server.js                 # Main bot code
+├── tests/
+│   └── newsBot.test.js       # Unit tests
+├── logs/                     # Log files
+│   ├── error.log
+│   └── combined.log
+├── coverage/                 # Test coverage reports
+├── enhanced_news_bot.db      # SQLite database
+├── package.json              # Dependencies
+├── .env                      # Environment variables
+└── README.md                 # This file
 ```
 
-## 📈 Monitoring & Analytics
+### **Adding New Features:**
+1. **Add function** in server.js
+2. **Write tests** in tests/newsBot.test.js
+3. **Update documentation** in README.md
+4. **Test thoroughly** with `npm test`
+5. **Deploy and monitor**
 
-The bot includes built-in monitoring endpoints:
+## 🚨 **Troubleshooting**
 
-- **Health Check**: `https://your-app.onrender.com/health`
-- **Status Dashboard**: `https://your-app.onrender.com/`
-- **News Count**: View current cached news count
-- **Uptime Tracking**: Monitor bot performance
+### **Common Issues:**
 
-### Example Health Response:
+#### **Bot Not Responding:**
+```bash
+# Check bot token
+echo $BOT_TOKEN
+
+# Check webhook status  
+curl https://api.telegram.org/bot$BOT_TOKEN/getWebhookInfo
+
+# Check logs
+npm run logs
+```
+
+#### **No News Results:**
+```bash
+# Check internet connection
+curl -I https://news.google.com
+
+# Verify RSS feeds accessible
+curl "https://news.google.com/rss/search?q=test&hl=en-IN"
+
+# Check rate limiting
+# Wait 15 minutes and try again
+```
+
+#### **Database Errors:**
+```bash
+# Check database file permissions
+ls -la enhanced_news_bot.db
+
+# Reset database (WARNING: loses data)
+rm enhanced_news_bot.db
+# Restart bot to recreate tables
+```
+
+#### **Webhook Issues:**
+```bash
+# Delete existing webhook
+curl -X POST "https://api.telegram.org/bot$BOT_TOKEN/deleteWebhook"
+
+# Set new webhook manually
+curl -X POST "https://api.telegram.org/bot$BOT_TOKEN/setWebhook?url=https://your-domain.com/webhook/$BOT_TOKEN"
+```
+
+### **Performance Issues:**
+```bash
+# Check memory usage
+curl http://localhost:3000/analytics
+
+# Monitor logs
+tail -f logs/combined.log
+
+# Check database size
+ls -lh enhanced_news_bot.db
+
+# Clean up old data (auto-cleanup runs every 30 min)
+# Manual cleanup if needed:
+sqlite3 enhanced_news_bot.db "DELETE FROM news_cache WHERE created_at < datetime('now', '-7 days')"
+```
+
+## 📊 **API Documentation**
+
+### **Health Check Endpoints:**
+```http
+GET /                 # Bot status & statistics
+GET /health          # Health check (for monitoring)
+GET /analytics       # Detailed analytics
+GET /ping            # Simple ping test
+```
+
+### **Webhook Endpoint:**
+```http
+POST /webhook/{BOT_TOKEN}    # Telegram webhook (auto-configured)
+```
+
+### **Example API Response:**
 ```json
 {
-  "status": "Bot is running!",
-  "newsCount": 87,
-  "lastUpdate": "2025-06-04T10:30:00.000Z"
+  "status": "Enhanced Viral News Bot v3.0",
+  "version": "3.0.0",
+  "features": [
+    "Working Direct Links",
+    "Content Scoring", 
+    "Moderation",
+    "Webhooks",
+    "Analytics"
+  ],
+  "stats": {
+    "totalNews": 1840,
+    "averageScore": 16,
+    "spicyContent": 420,
+    "conspiracyContent": 180,
+    "successRate": 94
+  }
 }
 ```
 
-## 🛡️ Anti-Detection Features
+## 🎯 **Success Metrics**
 
-- **Random User Agents** - Rotates browser headers
-- **Request Delays** - Respectful rate limiting
-- **Error Recovery** - Continues working if sources fail
-- **RSS Feeds** - Uses official news feeds when possible
-- **snscrape** - No Twitter API limits or restrictions
+### **Content Quality Indicators:**
+- **High Spice Content:** 30%+ of articles with 7+ spice score
+- **Conspiracy Content:** 15%+ with 6+ conspiracy score  
+- **Fresh Content:** 100% articles within 24 hours
+- **Working Links:** 95%+ direct, non-broken URLs
+- **No Duplicates:** Advanced filtering removes 100% duplicates
 
-## 🔍 Troubleshooting
+### **Performance Targets:**
+- **Response Time:** <3 seconds average
+- **Uptime:** 99%+ availability
+- **Success Rate:** 95%+ successful requests
+- **Error Rate:** <5% failed operations
 
-### Common Issues & Solutions
+### **User Engagement:**
+- **Commands/User:** Track via `/mystats`
+- **Custom Keywords:** Monitor additions per category
+- **Search Usage:** Track `/spicy` vs `/conspiracy` usage
+- **Content Preferences:** Analyze most-requested categories
 
-#### 1. Bot Not Responding
+## 🔐 **Security Features**
+
+### **Built-in Protection:**
+- ✅ **Rate Limiting:** Prevents spam and abuse
+- ✅ **Content Moderation:** Filters inappropriate content
+- ✅ **Input Sanitization:** Prevents injection attacks
+- ✅ **Error Handling:** Graceful failure management
+- ✅ **Database Security:** Parameterized queries
+- ✅ **Environment Variables:** Secure token storage
+
+### **Best Practices:**
 ```bash
-# Check bot status
-curl https://your-app.onrender.com/health
+# Keep bot token secure
+echo "BOT_TOKEN=your_token" >> .env
+echo ".env" >> .gitignore
 
-# Check logs in Render dashboard
-# Verify BOT_TOKEN environment variable
+# Regular updates
+npm audit
+npm update
+
+# Monitor logs for suspicious activity
+grep "error\|failed\|blocked" logs/combined.log
 ```
 
-#### 2. No News Found
-- **Cause**: Sources might be temporarily down
-- **Solution**: Bot auto-retries and uses multiple sources
-- **Manual**: Use `/refresh` command to force update
+## 📞 **Support & Contact**
 
-#### 3. Twitter Scraping Issues
-```bash
-# Ensure snscrape is installed
-pip install snscrape
+### **Getting Help:**
+1. **Check logs** first: `npm run logs`
+2. **Run tests** to verify: `npm test`
+3. **Check analytics** for issues: `curl localhost:3000/analytics`
+4. **Review documentation** above
+5. **Create GitHub issue** with details
 
-# Test snscrape manually
-snscrape --jsonl --max-results 1 twitter-user CarryMinati
-```
+### **Contributing:**
+1. Fork the repository
+2. Create feature branch: `git checkout -b feature-name`
+3. Write tests for new features
+4. Ensure all tests pass: `npm test`
+5. Submit pull request with description
 
-#### 4. Deployment Fails
-- **Check**: Node.js version (requires 16+)
-- **Verify**: All environment variables set
-- **Review**: Build logs in Render dashboard
+### **Feature Requests:**
+Open GitHub issue with:
+- **Clear description** of desired feature
+- **Use case** explanation
+- **Expected behavior** details
+- **Additional context** if needed
 
-## 🚦 Rate Limiting & Best Practices
+## 📝 **License**
 
-The bot implements smart rate limiting:
+MIT License - feel free to use for personal and commercial projects.
 
-```javascript
-// Google News: 1 second between requests
-await new Promise(resolve => setTimeout(resolve, 1000));
+## 🎉 **Changelog**
 
-// News Sites: 2 seconds between requests  
-await new Promise(resolve => setTimeout(resolve, 2000));
+### **v3.0.0 (Current)**
+- ✅ **Webhooks** instead of polling
+- ✅ **Unit tests** with Jest
+- ✅ **Content moderation** system
+- ✅ **Advanced scoring** (spice/conspiracy/importance)
+- ✅ **Rate limiting** protection
+- ✅ **Enhanced keywords** per category
+- ✅ **Database integration** with SQLite
+- ✅ **Analytics dashboard**
+- ✅ **Performance optimization**
 
-// Twitter: 1.5 seconds between handles
-await new Promise(resolve => setTimeout(resolve, 1500));
-```
+### **v2.0.0**
+- 📱 Multi-platform search
+- 🔗 Working link extraction
+- 📊 Basic content scoring
+- ⏰ 24-hour content filtering
 
-## 📁 Project Structure
-
-```
-viral-news-bot/
-├── server.js          # Main bot logic
-├── package.json       # Dependencies
-├── .gitignore         # Git ignore rules
-├── README.md          # This file
-└── .env              # Environment variables (local only)
-```
-
-## 🔄 Auto-Update Schedule
-
-- **News Refresh**: Every 2 hours automatically
-- **Cache Clear**: Every 6 hours to prevent memory issues
-- **Health Check**: Every 30 seconds (internal)
-- **Manual Refresh**: Available via `/refresh` command
-
-## 🎯 Advanced Usage
-
-### Custom Keywords
-Add your own trending keywords by modifying `SEARCH_KEYWORDS`:
-
-```javascript
-const SEARCH_KEYWORDS = {
-  custom_category: [
-    'Your custom search term',
-    'Another trending topic'
-  ]
-};
-```
-
-### Additional News Sources
-Extend `NEWS_SOURCES` with more websites:
-
-```javascript
-const NEWS_SOURCES = {
-  indian_news: [
-    'https://www.ndtv.com/latest',
-    'https://www.hindustantimes.com/latest-news',
-    'https://indianexpress.com/latest-news/'
-  ]
-};
-```
-
-### Twitter Handle Groups
-Organize Twitter handles by categories:
-
-```javascript
-twitter_handles: {
-  tech_youtubers: ['TechnicalGuruji', 'UnboxTherapy'],
-  gaming_youtubers: ['MrBeast6000', 'PewDiePie'],
-  custom_group: ['YourHandle1', 'YourHandle2']
-}
-```
-
-## 🔒 Security & Privacy
-
-- **No Data Storage** - News is cached temporarily, not stored permanently
-- **No User Tracking** - Bot doesn't store user information
-- **Public APIs Only** - Uses publicly available news sources
-- **Rate Limited** - Respectful scraping practices
-- **Error Handling** - Fails gracefully without exposing sensitive data
-
-## 🌟 Contributing
-
-Want to improve the bot? Here's how:
-
-1. **Fork** the repository
-2. **Create** a feature branch: `git checkout -b feature/new-source`
-3. **Add** your improvements
-4. **Test** locally with `npm start`
-5. **Commit** changes: `git commit -m 'Add new news source'`
-6. **Push** to branch: `git push origin feature/new-source`
-7. **Create** a Pull Request
-
-### Ideas for Contributions:
-- Add more Indian news sources
-- Include regional language news
-- Add sports beyond cricket
-- Improve news categorization
-- Add news sentiment analysis
-- Create news summarization
-
-## 📊 News Source Performance
-
-| Source Type | Success Rate | Avg Response Time | News Quality |
-|-------------|--------------|------------------|---------------|
-| Google News RSS | 95% | 1.2s | High |
-| Indian News Sites | 88% | 2.5s | High |
-| Twitter (snscrape) | 92% | 3.1s | Medium |
-| Regional Sources | 85% | 2.8s | Medium |
-
-## 🎨 Customization Options
-
-### Message Formatting
-Customize how news appears in Telegram:
-
-```javascript
-function formatNewsMessage(articles, category) {
-  let message = `🔥 **${category.toUpperCase()}** 🔥\n\n`;
-  
-  articles.forEach((article, index) => {
-    message += `${index + 1}. ${article.title}\n`;
-    message += `   📅 ${article.pubDate}\n`;
-    message += `   🔗 ${article.link}\n\n`;
-  });
-  
-  return message;
-}
-```
-
-### Category Icons
-Customize category icons:
-
-```javascript
-const CATEGORY_ICONS = {
-  youtubers: '🎥',
-  bollywood: '🎭', 
-  cricket: '🏏',
-  national: '🇮🇳',
-  pakistan: '🤣'
-};
-```
-
-## 📞 Support & Contact
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/viral-news-bot/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/viral-news-bot/discussions)
-- **Documentation**: This README file
-- **Updates**: Watch this repository for updates
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## ⚠️ Disclaimer
-
-- This bot is for **educational and informational purposes** only
-- News content belongs to respective sources and publishers
-- Bot respects robots.txt and rate limiting guidelines
-- Use responsibly and in compliance with platform terms of service
-- No warranty provided for news accuracy or bot uptime
-
-## 🙏 Acknowledgments
-
-- **Telegram Bot API** - For the excellent bot framework
-- **snscrape** - For Twitter data without API limitations  
-- **Cheerio** - For powerful web scraping capabilities
-- **Render** - For free hosting platform
-- **News Sources** - For providing public news feeds
-
-## 🚀 Quick Start Summary
-
-1. **Create Bot**: Message @BotFather on Telegram
-2. **Get Token**: Save your bot token
-3. **Deploy**: Use one-click deploy to Render
-4. **Set Token**: Add BOT_TOKEN environment variable
-5. **Test**: Send `/start` to your bot
-6. **Enjoy**: Get viral news with `/latest`
+### **v1.0.0**
+- 🤖 Basic Telegram bot
+- 📰 Google News RSS parsing
+- 📂 Category-based search
+- 🔄 Simple keyword management
 
 ---
 
-**Made with ❤️ for the Indian content creator community**
+**🔥 Ready to create viral YouTube content with the spiciest, most controversial news available!**
 
-*Star ⭐ this repo if you found it useful!*
+**🎬 Perfect for news channels focused on drama, conspiracy, and breaking stories!**
+
+**⚡ Get started now and dominate the YouTube news space!**
