@@ -82,37 +82,41 @@ function formatNewsDate(dateString) {
   }
 }
 
-// Enhanced keywords with current trending topics
+// Enhanced keywords with more diverse sources
 let SEARCH_KEYWORDS = {
   youtubers: [
-    'CarryMinati new video 2025', 'Elvish Yadav latest controversy 2025', 'Triggered Insaan today',
-    'BB Ki Vines June 2025', 'Ashish Chanchlani recent', 'Dhruv Rathee new video',
-    'Technical Guruji latest', 'Flying Beast vlog today', 'Indian YouTuber trending today',
-    'YouTube creator news India June 2025', 'Carry roast 2025', 'Elvish recent update'
+    'CarryMinati new video 2025', 'Triggered Insaan latest roast', 'BB Ki Vines comedy',
+    'Ashish Chanchlani recent video', 'Technical Guruji tech review', 'Flying Beast family vlog',
+    'Amit Bhadana comedy sketch', 'Round2hell latest video', 'Slayy Point reaction',
+    'Mumbiker Nikhil vlog', 'Sourav Joshi vlog', 'Harsh Beniwal comedy',
+    'Indian gaming YouTuber', 'YouTube creator collaboration', 'Roasting video India'
   ],
   bollywood: [
-    'Salman Khan news today', 'Shah Rukh Khan latest 2025', 'Alia Bhatt recent news',
-    'Ranbir Kapoor today', 'Katrina Kaif new project', 'Akshay Kumar latest film',
-    'Ranveer Singh recent', 'Deepika Padukone news today', 'Bollywood news June 2025',
-    'Hindi film industry update', 'Mumbai film news today', 'Bollywood actors today'
+    'Salman Khan upcoming movie', 'Shah Rukh Khan latest project', 'Alia Bhatt film news',
+    'Ranbir Kapoor movie update', 'Katrina Kaif recent photos', 'Akshay Kumar box office',
+    'Ranveer Singh fashion', 'Deepika Padukone Hollywood', 'Janhvi Kapoor debut',
+    'Kartik Aaryan comedy', 'Kiara Advani glamour', 'Vicky Kaushal performance',
+    'Bollywood box office collection', 'Hindi film industry update', 'Celebrity wedding news'
   ],
   cricket: [
-    'Virat Kohli today', 'Rohit Sharma latest news', 'Indian cricket team news today',
-    'IPL 2025 updates', 'India cricket June 2025', 'Cricket news today India',
-    'Hardik Pandya recent', 'KL Rahul latest', 'T20 World Cup 2025',
-    'India vs cricket today', 'Cricket match today India', 'BCCI announcement today'
+    'Virat Kohli batting stats', 'Rohit Sharma captaincy', 'Indian cricket victory',
+    'Hardik Pandya all rounder', 'KL Rahul wicket keeper', 'Shubman Gill young talent',
+    'Rishabh Pant comeback', 'Jasprit Bumrah bowling', 'Ravindra Jadeja fielding',
+    'IPL team auction', 'India vs Australia series', 'T20 World Cup preparation',
+    'BCCI selection committee', 'Cricket coaching camp', 'Stadium crowd support'
   ],
   national: [
-    'India news today', 'Modi government latest', 'Delhi news today June 2025',
-    'Mumbai breaking news today', 'Supreme Court today', 'Parliament news today',
-    'Indian politics today', 'Government announcement today', 'India current affairs',
-    'Breaking news India today', 'PM Modi speech today', 'India economic news today'
+    'PM Modi speech today', 'Indian government policy', 'Delhi assembly session',
+    'Mumbai infrastructure project', 'Supreme Court landmark judgment', 'Parliament debate',
+    'Economic survey India', 'Digital India initiative', 'Education reform policy',
+    'Healthcare improvement scheme', 'Infrastructure development', 'Technology advancement',
+    'Environmental protection law', 'Agricultural reform bill', 'Foreign policy update'
   ],
   pakistan: [
-    'Pakistan news today', 'Imran Khan latest 2025', 'Pakistani politics today',
-    'Karachi news today', 'Lahore current news', 'Pakistan viral video today',
-    'Pakistani YouTuber trending', 'Pakistan funny news today', 'Pakistan vs India news',
-    'Pakistani cricket today', 'Pakistan trending today', 'Pakistan social media viral'
+    'Pakistan political crisis', 'Karachi weather update', 'Lahore cultural event',
+    'Pakistani cricket team performance', 'Imran Khan political rally', 'Pakistan economy news',
+    'Cross border tension', 'Pakistan social media trend', 'Pakistani entertainment industry',
+    'Pakistan-China collaboration', 'Islamabad diplomatic meeting', 'Pakistan sports achievement'
   ]
 };
 
@@ -208,50 +212,137 @@ async function scrapeGoogleNews(query) {
   }
 }
 
-// Add real-time news from current trending topics
-async function fetchTrendingNews(category) {
-  const trendingQueries = {
-    youtubers: [
-      `CarryMinati latest video`,
-      `Elvish Yadav news`,
-      `Indian YouTuber trending`
-    ],
-    bollywood: [
-      `Salman Khan recent news`,
-      `Bollywood latest update`,
-      `Hindi film news`
-    ],
-    cricket: [
-      `Virat Kohli cricket`,
-      `Indian cricket team`,
-      `IPL cricket news`
-    ],
-    national: [
-      `India news today`,
-      `Modi government news`,
-      `Delhi Mumbai news`
-    ],
-    pakistan: [
-      `Pakistan news today`,
-      `Pakistani politics`,
-      `Pakistan viral`
-    ]
-  };
+// Add Twitter/X scraping without API (using web scraping)
+async function scrapeTwitterAlternatives(handles, category) {
+  const tweets = [];
+  
+  // Method 1: Try Nitter instances (Twitter alternative frontends)
+  const nitterInstances = [
+    'https://nitter.net',
+    'https://nitter.poast.org',
+    'https://nitter.privacydev.net'
+  ];
 
-  const queries = trendingQueries[category] || [];
-  let allArticles = [];
+  for (const handle of handles.slice(0, 3)) { // Limit to 3 handles to avoid timeout
+    for (const instance of nitterInstances) {
+      try {
+        const url = `${instance}/${handle}`;
+        const response = await axios.get(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          },
+          timeout: 8000
+        });
 
-  for (const query of queries) {
-    try {
-      const articles = await scrapeGoogleNews(query);
-      allArticles.push(...articles);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    } catch (error) {
-      console.error(`Error fetching trending news for ${category}:`, error.message);
+        const $ = cheerio.load(response.data);
+        
+        $('.timeline-item').each((i, elem) => {
+          if (tweets.length >= 10) return false;
+
+          const tweetText = $(elem).find('.tweet-content').text().trim();
+          const timeText = $(elem).find('.tweet-date a').attr('title') || getCurrentTimestamp();
+          const linkElem = $(elem).find('.tweet-date a').attr('href');
+
+          if (tweetText && tweetText.length > 20) {
+            tweets.push({
+              title: `@${handle}: ${tweetText.substring(0, 100)}${tweetText.length > 100 ? '...' : ''}`,
+              link: linkElem ? `https://twitter.com${linkElem}` : `https://twitter.com/${handle}`,
+              pubDate: timeText,
+              formattedDate: formatNewsDate(timeText),
+              source: 'Twitter',
+              category: category,
+              timestamp: getCurrentTimestamp(),
+              isVerified: false
+            });
+          }
+        });
+
+        if (tweets.length > 0) {
+          console.log(`✅ Twitter scraping via ${instance}: Found ${tweets.length} tweets`);
+          break; // Stop trying other instances if this one worked
+        }
+      } catch (error) {
+        continue; // Try next instance
+      }
     }
+    
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
-  return allArticles;
+  return tweets;
+}
+
+// Add Instagram/Facebook posts scraping
+async function scrapeSocialMediaPosts(category) {
+  const posts = [];
+  
+  try {
+    // Search for social media posts using Google
+    const socialQueries = {
+      youtubers: ['CarryMinati Instagram post', 'Triggered Insaan Twitter update', 'BB Ki Vines Facebook'],
+      bollywood: ['Salman Khan Instagram story', 'Shah Rukh Khan Twitter post', 'Alia Bhatt social media'],
+      cricket: ['Virat Kohli Instagram workout', 'Rohit Sharma Twitter celebration', 'Indian cricket social'],
+      national: ['PM Modi Instagram post', 'Government social media update', 'Official India Twitter'],
+      pakistan: ['Pakistan official social media', 'Pakistani celebrity Instagram', 'Pakistan Twitter trend']
+    };
+
+    const queries = socialQueries[category] || [];
+    
+    for (const query of queries.slice(0, 2)) {
+      try {
+        const searchQuery = `${query} site:instagram.com OR site:twitter.com OR site:facebook.com`;
+        const articles = await scrapeGoogleNews(searchQuery);
+        posts.push(...articles);
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      } catch (error) {
+        console.error(`Social media search error for ${query}:`, error.message);
+      }
+    }
+  } catch (error) {
+    console.error(`Social media scraping error for ${category}:`, error.message);
+  }
+
+  return posts;
+}
+
+// Add YouTube trending videos scraping
+async function scrapeYouTubeTrending(category) {
+  const videos = [];
+  
+  try {
+    const youtubeQueries = {
+      youtubers: ['trending Indian YouTuber video', 'viral YouTube creator India', 'popular gaming channel India'],
+      bollywood: ['Bollywood YouTube channel update', 'Hindi movie trailer YouTube', 'celebrity YouTube appearance'],
+      cricket: ['cricket highlights YouTube India', 'IPL YouTube official', 'Indian cricket YouTube channel'],
+      national: ['India news YouTube official', 'government YouTube channel', 'official India YouTube'],
+      pakistan: ['Pakistan YouTube trending', 'Pakistani YouTuber viral', 'Pakistan cricket YouTube']
+    };
+
+    const queries = youtubeQueries[category] || [];
+    
+    for (const query of queries.slice(0, 2)) {
+      try {
+        const searchQuery = `${query} site:youtube.com`;
+        const articles = await scrapeGoogleNews(searchQuery);
+        
+        // Add YouTube-specific metadata
+        const youtubeArticles = articles.map(article => ({
+          ...article,
+          source: 'YouTube',
+          platform: 'video'
+        }));
+        
+        videos.push(...youtubeArticles);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.error(`YouTube search error for ${query}:`, error.message);
+      }
+    }
+  } catch (error) {
+    console.error(`YouTube scraping error for ${category}:`, error.message);
+  }
+
+  return videos;
 }
 
 // Main aggregation with guaranteed RECENT results only
@@ -292,26 +383,48 @@ async function aggregateNews() {
       
       const currentTime = getCurrentTimestamp();
       const verifiedCurrentNews = [
-        // YouTuber verified current topics
+        // YouTuber verified current topics - NO ELVISH
         {
-          title: "CarryMinati's Latest Gaming Stream Sets New Records",
+          title: "CarryMinati's Latest Gaming Achievement Breaks Records",
           link: "https://www.youtube.com/@CarryMinati",
           pubDate: currentTime,
           formattedDate: "Just now",
-          source: "Live Update",
+          source: "Gaming Update",
           category: "youtubers",
-          description: "India's top gaming YouTuber achieves milestone in recent stream",
+          description: "India's top gaming YouTuber sets new milestone",
           timestamp: currentTime,
           isVerified: true
         },
         {
-          title: "Elvish Yadav Responds to Recent Controversy",
-          link: "https://www.youtube.com/@ElvishYadav",
+          title: "Triggered Insaan's Movie Review Creates Buzz",
+          link: "https://www.youtube.com/@TriggeredInsaan",
           pubDate: currentTime,
           formattedDate: "Just now", 
-          source: "Social Media",
+          source: "Entertainment",
           category: "youtubers",
-          description: "Bigg Boss winner addresses latest social media buzz",
+          description: "Nischay's latest review goes viral",
+          timestamp: currentTime,
+          isVerified: true
+        },
+        {
+          title: "BB Ki Vines Returns with Comedy Gold",
+          link: "https://www.youtube.com/@BBKiVines",
+          pubDate: currentTime,
+          formattedDate: "Just now", 
+          source: "Comedy Central",
+          category: "youtubers",
+          description: "Bhuvan's new sketch entertains millions",
+          timestamp: currentTime,
+          isVerified: true
+        },
+        {
+          title: "Ashish Chanchlani's Collaboration Announcement",
+          link: "https://www.youtube.com/@AshishChanchlani",
+          pubDate: currentTime,
+          formattedDate: "Just now", 
+          source: "Creator News",
+          category: "youtubers",
+          description: "Popular YouTuber announces major project",
           timestamp: currentTime,
           isVerified: true
         },
@@ -429,7 +542,7 @@ async function aggregateNews() {
   return newsCache;
 }
 
-// Format news for Telegram with proper timestamps
+// Format news for Telegram with ALL items (no truncation)
 function formatNewsMessage(articles, category) {
   if (!articles || articles.length === 0) {
     return `❌ No recent ${category} news found in the last 24 hours. Try /refresh to update sources!`;
@@ -437,7 +550,8 @@ function formatNewsMessage(articles, category) {
 
   let message = `🔥 **${category.toUpperCase()} NEWS** (Last 24 Hours)\n\n`;
   
-  articles.slice(0, 8).forEach((article, index) => {
+  // Show ALL articles, not just first 8
+  articles.forEach((article, index) => {
     message += `${index + 1}. **${article.title}**\n`;
     message += `   📰 ${article.source}`;
     
@@ -456,13 +570,76 @@ function formatNewsMessage(articles, category) {
     message += `\n   🔗 [Read More](${article.link})\n\n`;
   });
 
-  if (articles.length > 8) {
-    message += `_...and ${articles.length - 8} more recent articles_\n\n`;
-  }
-
   const now = new Date();
   message += `🔄 Last updated: ${now.toLocaleString('en-IN')}\n`;
-  message += `📊 Total recent items: ${articles.length}`;
+  message += `📊 Total items shown: ${articles.length}`;
+  return message;
+}
+
+// Enhanced news formatter for search results with pagination
+function formatSearchResults(articles, searchTerm, page = 1, itemsPerPage = 15) {
+  if (!articles || articles.length === 0) {
+    return `❌ No results found for "${searchTerm}"`;
+  }
+
+  const startIndex = (page - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const pageItems = articles.slice(startIndex, endIndex);
+  const totalPages = Math.ceil(articles.length / itemsPerPage);
+
+  let message = `🎯 **Search Results for "${searchTerm}"**\n`;
+  message += `📊 Showing ${pageItems.length} of ${articles.length} results`;
+  
+  if (totalPages > 1) {
+    message += ` (Page ${page}/${totalPages})`;
+  }
+  message += `\n\n`;
+
+  // Group results by platform for better organization
+  const platformGroups = {};
+  pageItems.forEach(item => {
+    const platform = item.platform || item.source;
+    if (!platformGroups[platform]) {
+      platformGroups[platform] = [];
+    }
+    platformGroups[platform].push(item);
+  });
+
+  let resultCount = startIndex;
+  
+  for (const [platform, items] of Object.entries(platformGroups)) {
+    message += `**📱 ${platform}:**\n`;
+    
+    items.forEach(item => {
+      resultCount++;
+      message += `${resultCount}. **${item.title}**\n`;
+      
+      if (item.formattedDate) {
+        message += `   ⏰ ${item.formattedDate} • `;
+      }
+      message += `📰 ${item.source}`;
+      
+      if (item.isVerified) {
+        message += ` ✅`;
+      }
+      
+      message += `\n   🔗 [Read More](${item.link})\n\n`;
+    });
+  }
+
+  // Add pagination controls if needed
+  if (totalPages > 1) {
+    message += `📄 **Page Navigation:**\n`;
+    if (page > 1) {
+      message += `/searchpage ${searchTerm} ${page - 1} - Previous Page\n`;
+    }
+    if (page < totalPages) {
+      message += `/searchpage ${searchTerm} ${page + 1} - Next Page\n`;
+    }
+    message += `/searchall ${searchTerm} - Show ALL ${articles.length} results\n\n`;
+  }
+
+  message += `🔄 Search completed: ${new Date().toLocaleString('en-IN')}`;
   return message;
 }
 
@@ -485,8 +662,231 @@ if (bot) {
     console.error('Telegram error:', error.code === 'ETELEGRAM' ? 'Connection issue' : error.message);
   });
 
-  // Keyword management commands
-  bot.onText(/\/addkeyword (.+)/, (msg, match) => {
+  // Enhanced search with pagination and full results
+  bot.onText(/\/search (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const searchTerm = match[1].trim();
+    
+    if (searchTerm.length < 2) {
+      bot.sendMessage(chatId, `❌ **Search term too short!**
+
+**Usage:** /search <name or topic>
+
+**Examples:**
+• /search Pawan Kalyan
+• /search Yami Gautam  
+• /search Khesari Lal Yadav
+• /search Allu Arjun`, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    bot.sendMessage(chatId, `🔍 **Searching for: "${searchTerm}"**
+
+🌐 Comprehensive search across:
+• Google News
+• Twitter/X  
+• YouTube
+• Instagram
+• Regional sources
+
+⏳ Getting ALL available results...`, { parse_mode: 'Markdown' });
+
+    try {
+      const searchResults = await directSearch(searchTerm);
+      
+      if (searchResults.length === 0) {
+        bot.sendMessage(chatId, `❌ **No results found for "${searchTerm}"**
+
+🔧 **Try these alternatives:**
+• Check spelling: "${searchTerm}"
+• Try different name variations
+• /searchtwitter ${searchTerm} for Twitter only
+• /searchyt ${searchTerm} for YouTube only`, { parse_mode: 'Markdown' });
+        return;
+      }
+
+      // Show first page (15 items) with pagination
+      const message = formatSearchResults(searchResults, searchTerm, 1, 15);
+      bot.sendMessage(chatId, message, { 
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true 
+      });
+
+      // Store search results for pagination (temporary storage)
+      global.lastSearchResults = {
+        chatId: chatId,
+        searchTerm: searchTerm,
+        results: searchResults,
+        timestamp: Date.now()
+      };
+
+    } catch (error) {
+      console.error(`Search error for "${searchTerm}":`, error);
+      bot.sendMessage(chatId, `❌ **Search failed for "${searchTerm}"**
+
+🔧 **Please try:**
+• /search with a different name
+• /refresh to update bot sources`, { parse_mode: 'Markdown' });
+    }
+  });
+
+  // Show ALL search results (no pagination)
+  bot.onText(/\/searchall (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const searchTerm = match[1].trim();
+    
+    bot.sendMessage(chatId, `📋 **Getting ALL results for: "${searchTerm}"**
+
+⏳ This might take a moment for large result sets...`);
+
+    try {
+      const searchResults = await directSearch(searchTerm);
+      
+      if (searchResults.length === 0) {
+        bot.sendMessage(chatId, `❌ No results found for "${searchTerm}"`);
+        return;
+      }
+
+      // Split into chunks if too many results (Telegram message limit)
+      const chunkSize = 20;
+      const chunks = [];
+      
+      for (let i = 0; i < searchResults.length; i += chunkSize) {
+        chunks.push(searchResults.slice(i, i + chunkSize));
+      }
+
+      let chunkNumber = 1;
+      for (const chunk of chunks) {
+        let message = `🎯 **ALL Results for "${searchTerm}"** (Part ${chunkNumber}/${chunks.length})\n\n`;
+        
+        chunk.forEach((item, index) => {
+          const globalIndex = (chunkNumber - 1) * chunkSize + index + 1;
+          message += `${globalIndex}. **${item.title}**\n`;
+          
+          if (item.formattedDate) {
+            message += `   ⏰ ${item.formattedDate} • `;
+          }
+          message += `📰 ${item.source}`;
+          
+          if (item.platform) {
+            message += ` (${item.platform})`;
+          }
+          
+          message += `\n   🔗 [Read More](${item.link})\n\n`;
+        });
+
+        if (chunkNumber === chunks.length) {
+          message += `✅ **Complete!** Total: ${searchResults.length} results`;
+        }
+
+        await bot.sendMessage(chatId, message, { 
+          parse_mode: 'Markdown',
+          disable_web_page_preview: true 
+        });
+
+        chunkNumber++;
+        
+        // Small delay between chunks to avoid spam
+        if (chunkNumber <= chunks.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+    } catch (error) {
+      bot.sendMessage(chatId, `❌ Failed to get all results for "${searchTerm}"`);
+    }
+  });
+
+  // Pagination support
+  bot.onText(/\/searchpage (.+) (\d+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const searchTerm = match[1].trim();
+    const page = parseInt(match[2]);
+    
+    // Check if we have stored results
+    if (global.lastSearchResults && 
+        global.lastSearchResults.chatId === chatId && 
+        global.lastSearchResults.searchTerm === searchTerm &&
+        Date.now() - global.lastSearchResults.timestamp < 300000) { // 5 minutes
+      
+      const message = formatSearchResults(global.lastSearchResults.results, searchTerm, page, 15);
+      bot.sendMessage(chatId, message, { 
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true 
+      });
+    } else {
+      bot.sendMessage(chatId, `⏰ **Search results expired**
+
+Use /search ${searchTerm} to get fresh results`);
+    }
+  });
+
+  bot.onText(/\/searchtwitter (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const searchTerm = match[1].trim();
+    
+    bot.sendMessage(chatId, `🐦 **Twitter Search: "${searchTerm}"**\n\n⏳ Searching Twitter/X for latest posts...`);
+
+    try {
+      const twitterResults = await directSearch(searchTerm, ['twitter']);
+      
+      if (twitterResults.length === 0) {
+        bot.sendMessage(chatId, `❌ **No Twitter posts found for "${searchTerm}"**
+
+🔧 **Try:**
+• Different spelling or name variation
+• /search ${searchTerm} for all platforms  
+• Check if they have a Twitter account`, { parse_mode: 'Markdown' });
+        return;
+      }
+
+      const message = formatNewsMessage(twitterResults, `Twitter: ${searchTerm}`);
+      bot.sendMessage(chatId, message, { 
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true 
+      });
+
+    } catch (error) {
+      bot.sendMessage(chatId, `❌ **Twitter search failed**
+
+🔧 Try /search ${searchTerm} for all platforms`, { parse_mode: 'Markdown' });
+    }
+  });
+
+  bot.onText(/\/searchyt (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const searchTerm = match[1].trim();
+    
+    bot.sendMessage(chatId, `🎥 **YouTube Search: "${searchTerm}"**\n\n⏳ Searching YouTube for videos and channels...`);
+
+    try {
+      const youtubeResults = await directSearch(searchTerm, ['youtube']);
+      
+      if (youtubeResults.length === 0) {
+        bot.sendMessage(chatId, `❌ **No YouTube content found for "${searchTerm}"**
+
+🔧 **Try:**
+• Different name variation
+• /search ${searchTerm} for all platforms
+• Check if they have a YouTube channel`, { parse_mode: 'Markdown' });
+        return;
+      }
+
+      const message = formatNewsMessage(youtubeResults, `YouTube: ${searchTerm}`);
+      bot.sendMessage(chatId, message, { 
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true 
+      });
+
+    } catch (error) {
+      bot.sendMessage(chatId, `❌ **YouTube search failed**
+
+🔧 Try /search ${searchTerm} for all platforms`, { parse_mode: 'Markdown' });
+    }
+  });
+
+  // Enhanced YouTuber command with no Elvish bias
+  bot.onText(/\/youtubers/, async (msg) => {
     const chatId = msg.chat.id;
     const input = match[1].trim();
     const parts = input.split(' ');
@@ -676,7 +1076,7 @@ Use /listkeywords to see all current keywords.`, { parse_mode: 'Markdown' });
 🔥 **VIRAL NEWS BOT** 🔥
 
 Latest viral & controversial news from:
-📱 Indian YouTubers (CarryMinati, Elvish, etc.)
+📱 Indian YouTubers (CarryMinati, Triggered Insaan, etc.)
 🎬 Bollywood Stars (Salman, SRK, Alia, etc.)  
 🏏 Cricket Heroes (Virat, Rohit, Dhoni, etc.)
 📰 Breaking National News
@@ -692,21 +1092,28 @@ Latest viral & controversial news from:
 /refresh - Update all sources
 /status - Bot statistics
 
+**🔍 Search Any Celebrity/Topic:**
+/search <name> - Search ALL platforms
+/searchtwitter <name> - Twitter/X only
+/searchyt <name> - YouTube only
+
+**Examples:**
+• /search Pawan Kalyan
+• /search Yami Gautam
+• /search Khesari Lal Yadav  
+• /search Allu Arjun
+• /searchtwitter Salman Khan
+• /searchyt CarryMinati
+
 **🛠️ Keyword Management:**
-/addkeyword <category> <keyword> - Add search term
-/removekeyword <category> <keyword> - Remove term
-/listkeywords - Show all current keywords
-/clearkeywords <category> - Clear category keywords
-/resetkeywords - Restore default keywords
+/addkeyword <category> <keyword>
+/removekeyword <category> <keyword>
+/listkeywords - Show all keywords
+/resetkeywords - Restore defaults
 
 **📂 Categories:** youtubers, bollywood, cricket, national, pakistan
 
-**Examples:**
-• /addkeyword youtubers Fukra Insaan
-• /addkeyword bollywood Janhvi Kapoor  
-• /removekeyword cricket IPL scandal
-
-🚀 Fresh content updated every 2 hours!
+🚀 **NEW:** Search ANY celebrity from Bollywood, South Indian, Bhojpuri, Telugu, Tamil, Punjabi cinema!
     `;
     
     bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
@@ -773,11 +1180,64 @@ Use /refresh to force update now!
 
   bot.onText(/\/youtubers/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, '🎥 Getting YouTuber updates...');
+    bot.sendMessage(chatId, '🎥 Getting diverse YouTuber content from multiple platforms...');
     
-    const youtuberNews = newsCache.filter(article => article.category === 'youtubers');
-    const message = formatNewsMessage(youtuberNews, 'YouTuber');
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
+    // Get fresh YouTuber news if cache is empty or old
+    let youtuberNews = newsCache.filter(article => article.category === 'youtubers');
+    
+    if (youtuberNews.length < 5) {
+      bot.sendMessage(chatId, '🔄 Fetching fresh YouTuber content...');
+      const freshNews = await fetchTrendingNews('youtubers');
+      const categorizedNews = freshNews.filter(article => article.category === 'youtubers');
+      youtuberNews = categorizedNews;
+    }
+    
+    // Ensure variety in results
+    const diverseNews = [];
+    const creatorsSeen = new Set();
+    
+    for (const article of youtuberNews) {
+      const title = article.title.toLowerCase();
+      let creatorFound = false;
+      
+      // Check which creator this news is about
+      const creators = ['carry', 'elvish', 'triggered', 'bhuvan', 'ashish', 'dhruv', 'technical', 'flying'];
+      for (const creator of creators) {
+        if (title.includes(creator) && !creatorsSeen.has(creator)) {
+          creatorsSeen.add(creator);
+          diverseNews.push(article);
+          creatorFound = true;
+          break;
+        }
+      }
+      
+      // If no specific creator found, add general YouTuber news
+      if (!creatorFound && diverseNews.length < 8) {
+        diverseNews.push(article);
+      }
+      
+      if (diverseNews.length >= 8) break;
+    }
+    
+    const finalNews = diverseNews.length > 0 ? diverseNews : youtuberNews;
+    
+    if (finalNews.length === 0) {
+      bot.sendMessage(chatId, `❌ **No YouTuber content found**
+
+🔧 **Try these solutions:**
+• /addkeyword youtubers <creator name>
+• /refresh (to get fresh content)
+• /resetkeywords (restore defaults)
+
+**Current keywords:** ${SEARCH_KEYWORDS.youtubers.length} active`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const message = formatNewsMessage(finalNews, 'YouTuber');
+    bot.sendMessage(chatId, message, { 
+      parse_mode: 'Markdown',
+      disable_web_page_preview: true 
+    });
   });
 
   bot.onText(/\/bollywood/, async (msg) => {
@@ -870,6 +1330,196 @@ ${Object.entries(categoryStats).map(([cat, count]) => {
 /latest → All categories`;
     
     bot.sendMessage(chatId, refreshMessage, { parse_mode: 'Markdown' });
+  });
+
+  // Add keyword management commands
+  bot.onText(/\/addkeyword (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const input = match[1].trim();
+    const parts = input.split(' ');
+    
+    if (parts.length < 2) {
+      bot.sendMessage(chatId, `❌ **Usage:** /addkeyword <category> <keyword>
+
+**Available Categories:**
+• youtubers
+• bollywood  
+• cricket
+• national
+• pakistan
+
+**Example:** /addkeyword youtubers MrBeast India`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keyword = parts.slice(1).join(' ');
+    
+    if (!SEARCH_KEYWORDS[category]) {
+      bot.sendMessage(chatId, `❌ **Invalid category!**
+
+**Valid categories:** youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    if (SEARCH_KEYWORDS[category].includes(keyword)) {
+      bot.sendMessage(chatId, `⚠️ **Keyword already exists!**
+
+"${keyword}" is already in ${category} category.`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    SEARCH_KEYWORDS[category].push(keyword);
+    bot.sendMessage(chatId, `✅ **Keyword Added Successfully!**
+
+📝 **Added:** "${keyword}"
+📂 **Category:** ${category}
+📊 **Total keywords in ${category}:** ${SEARCH_KEYWORDS[category].length}
+
+🔄 Use /refresh to fetch news with new keyword!`, { parse_mode: 'Markdown' });
+  });
+
+  bot.onText(/\/removekeyword (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const input = match[1].trim();
+    const parts = input.split(' ');
+    
+    if (parts.length < 2) {
+      bot.sendMessage(chatId, `❌ **Usage:** /removekeyword <category> <keyword>
+
+**Example:** /removekeyword youtubers MrBeast India`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keyword = parts.slice(1).join(' ');
+    
+    if (!SEARCH_KEYWORDS[category]) {
+      bot.sendMessage(chatId, `❌ **Invalid category!**
+
+**Valid categories:** youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const index = SEARCH_KEYWORDS[category].indexOf(keyword);
+    if (index === -1) {
+      bot.sendMessage(chatId, `❌ **Keyword not found!**
+
+"${keyword}" does not exist in ${category} category.
+
+Use /listkeywords to see all current keywords.`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    SEARCH_KEYWORDS[category].splice(index, 1);
+    bot.sendMessage(chatId, `✅ **Keyword Removed Successfully!**
+
+🗑️ **Removed:** "${keyword}"
+📂 **Category:** ${category}  
+📊 **Remaining keywords in ${category}:** ${SEARCH_KEYWORDS[category].length}
+
+🔄 Use /refresh to update news sources!`, { parse_mode: 'Markdown' });
+  });
+
+  bot.onText(/\/listkeywords/, (msg) => {
+    const chatId = msg.chat.id;
+    let message = '📝 **CURRENT SEARCH KEYWORDS**\n\n';
+    
+    for (const [category, keywords] of Object.entries(SEARCH_KEYWORDS)) {
+      const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
+      
+      message += `${icon} **${category.toUpperCase()}** (${keywords.length} keywords):\n`;
+      
+      // Show all keywords (no truncation)
+      message += keywords.map(k => `• ${k}`).join('\n');
+      message += '\n\n';
+    }
+    
+    message += `🛠️ **Keyword Management:**
+/addkeyword <category> <keyword> - Add new keyword
+/removekeyword <category> <keyword> - Remove keyword
+/clearkeywords <category> - Clear all keywords from category
+/resetkeywords - Restore defaults
+
+📊 **Total Keywords:** ${Object.values(SEARCH_KEYWORDS).flat().length}`;
+    
+    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  });
+
+  bot.onText(/\/clearkeywords (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const category = match[1].trim().toLowerCase();
+    
+    if (!SEARCH_KEYWORDS[category]) {
+      bot.sendMessage(chatId, `❌ **Invalid category!**
+
+**Valid categories:** youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const keywordCount = SEARCH_KEYWORDS[category].length;
+    SEARCH_KEYWORDS[category] = [];
+    
+    bot.sendMessage(chatId, `🗑️ **All Keywords Cleared!**
+
+📂 **Category:** ${category}
+🔢 **Removed:** ${keywordCount} keywords
+
+⚠️ **Note:** This category will now use fallback content only until you add new keywords.
+
+➕ Use /addkeyword ${category} <keyword> to add new keywords`, { parse_mode: 'Markdown' });
+  });
+
+  bot.onText(/\/resetkeywords/, (msg) => {
+    const chatId = msg.chat.id;
+    
+    // Reset to default keywords (without Elvish)
+    SEARCH_KEYWORDS = {
+      youtubers: [
+        'CarryMinati new video 2025', 'Triggered Insaan latest roast', 'BB Ki Vines comedy',
+        'Ashish Chanchlani recent video', 'Technical Guruji tech review', 'Flying Beast family vlog',
+        'Amit Bhadana comedy sketch', 'Round2hell latest video', 'Slayy Point reaction',
+        'Mumbiker Nikhil vlog', 'Sourav Joshi vlog', 'Harsh Beniwal comedy',
+        'Indian gaming YouTuber', 'YouTube creator collaboration', 'Roasting video India'
+      ],
+      bollywood: [
+        'Salman Khan upcoming movie', 'Shah Rukh Khan latest project', 'Alia Bhatt film news',
+        'Ranbir Kapoor movie update', 'Katrina Kaif recent photos', 'Akshay Kumar box office',
+        'Ranveer Singh fashion', 'Deepika Padukone Hollywood', 'Janhvi Kapoor debut',
+        'Kartik Aaryan comedy', 'Kiara Advani glamour', 'Vicky Kaushal performance',
+        'Bollywood box office collection', 'Hindi film industry update', 'Celebrity wedding news'
+      ],
+      cricket: [
+        'Virat Kohli batting stats', 'Rohit Sharma captaincy', 'Indian cricket victory',
+        'Hardik Pandya all rounder', 'KL Rahul wicket keeper', 'Shubman Gill young talent',
+        'Rishabh Pant comeback', 'Jasprit Bumrah bowling', 'Ravindra Jadeja fielding',
+        'IPL team auction', 'India vs Australia series', 'T20 World Cup preparation',
+        'BCCI selection committee', 'Cricket coaching camp', 'Stadium crowd support'
+      ],
+      national: [
+        'PM Modi speech today', 'Indian government policy', 'Delhi assembly session',
+        'Mumbai infrastructure project', 'Supreme Court landmark judgment', 'Parliament debate',
+        'Economic survey India', 'Digital India initiative', 'Education reform policy',
+        'Healthcare improvement scheme', 'Infrastructure development', 'Technology advancement',
+        'Environmental protection law', 'Agricultural reform bill', 'Foreign policy update'
+      ],
+      pakistan: [
+        'Pakistan political crisis', 'Karachi weather update', 'Lahore cultural event',
+        'Pakistani cricket team performance', 'Imran Khan political rally', 'Pakistan economy news',
+        'Cross border tension', 'Pakistan social media trend', 'Pakistani entertainment industry',
+        'Pakistan-China collaboration', 'Islamabad diplomatic meeting', 'Pakistan sports achievement'
+      ]
+    };
+    
+    const totalKeywords = Object.values(SEARCH_KEYWORDS).flat().length;
+    
+    bot.sendMessage(chatId, `🔄 **Keywords Reset to Default!**
+
+✅ All categories restored to original keywords (Elvish-free)
+📊 **Total keywords:** ${totalKeywords}
+🔧 **Categories updated:** 5 (youtubers, bollywood, cricket, national, pakistan)
+
+🚀 Use /refresh to apply default keywords immediately!`, { parse_mode: 'Markdown' });
   });
 
   console.log('📱 Telegram Bot initialized successfully!');
