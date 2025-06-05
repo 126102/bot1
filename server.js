@@ -182,17 +182,19 @@ async function scrapeGoogleNews(query) {
   }
 }
 
-// Fetch ALL news for category using ALL keywords
+// Fetch ALL news for category using ALL keywords (FIXED)
 async function fetchAllNews(category) {
   const allArticles = [];
   
   try {
     const keywords = SEARCH_KEYWORDS[category] || [];
-    console.log(`🔍 Searching ${category} with ${keywords.length} keywords...`);
+    console.log(`🔍 Searching ${category} with ALL ${keywords.length} keywords...`);
     
-    for (const keyword of keywords) {
+    // Use ALL keywords, not just first 3
+    for (let i = 0; i < keywords.length; i++) {
+      const keyword = keywords[i];
       try {
-        console.log(`   → Searching: ${keyword}`);
+        console.log(`   → Searching ${i+1}/${keywords.length}: ${keyword}`);
         const articles = await scrapeGoogleNews(keyword);
         
         const categoryArticles = articles.filter(article => 
@@ -200,7 +202,10 @@ async function fetchAllNews(category) {
         );
         
         allArticles.push(...categoryArticles);
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log(`     ✅ Found ${categoryArticles.length} articles for "${keyword}"`);
+        
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 800));
       } catch (error) {
         console.error(`❌ Error with keyword "${keyword}":`, error.message);
       }
@@ -212,11 +217,86 @@ async function fetchAllNews(category) {
       return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
     });
 
-    console.log(`✅ ${category}: ${uniqueArticles.length} unique articles found`);
+    console.log(`✅ ${category}: ${uniqueArticles.length} unique articles from ${keywords.length} keywords`);
     return uniqueArticles;
     
   } catch (error) {
     console.error(`❌ fetchAllNews error for ${category}:`, error.message);
+    return [];
+  }
+}
+
+// Enhanced search with Twitter support
+async function directSearchWithPlatforms(searchTerm) {
+  const allResults = [];
+  
+  try {
+    console.log(`🔍 Comprehensive search for: ${searchTerm}`);
+    
+    // 1. Regular Google News search
+    console.log(`   → Google News search...`);
+    const newsResults = await scrapeGoogleNews(searchTerm);
+    allResults.push(...newsResults);
+    
+    // 2. Twitter search via Google
+    console.log(`   → Twitter search...`);
+    try {
+      const twitterQuery = `${searchTerm} site:twitter.com OR site:x.com`;
+      const twitterResults = await scrapeGoogleNews(twitterQuery);
+      const twitterArticles = twitterResults.map(article => ({
+        ...article,
+        source: 'Twitter/X',
+        platform: 'twitter'
+      }));
+      allResults.push(...twitterArticles);
+      console.log(`     ✅ Twitter: ${twitterArticles.length} results`);
+    } catch (error) {
+      console.error('Twitter search error:', error.message);
+    }
+    
+    // 3. YouTube search via Google
+    console.log(`   → YouTube search...`);
+    try {
+      const youtubeQuery = `${searchTerm} site:youtube.com`;
+      const youtubeResults = await scrapeGoogleNews(youtubeQuery);
+      const youtubeArticles = youtubeResults.map(article => ({
+        ...article,
+        source: 'YouTube',
+        platform: 'youtube'
+      }));
+      allResults.push(...youtubeArticles);
+      console.log(`     ✅ YouTube: ${youtubeArticles.length} results`);
+    } catch (error) {
+      console.error('YouTube search error:', error.message);
+    }
+    
+    // 4. Instagram search via Google
+    console.log(`   → Instagram search...`);
+    try {
+      const instaQuery = `${searchTerm} site:instagram.com`;
+      const instaResults = await scrapeGoogleNews(instaQuery);
+      const instaArticles = instaResults.map(article => ({
+        ...article,
+        source: 'Instagram',
+        platform: 'instagram'
+      }));
+      allResults.push(...instaArticles);
+      console.log(`     ✅ Instagram: ${instaArticles.length} results`);
+    } catch (error) {
+      console.error('Instagram search error:', error.message);
+    }
+
+    // Remove duplicates
+    const uniqueResults = allResults.filter((article, index, self) => {
+      const titleKey = article.title.toLowerCase().substring(0, 40);
+      return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
+    });
+
+    console.log(`✅ Comprehensive search complete: ${uniqueResults.length} total results`);
+    return uniqueResults;
+
+  } catch (error) {
+    console.error(`❌ Comprehensive search error for "${searchTerm}":`, error.message);
     return [];
   }
 }
@@ -397,12 +477,12 @@ function formatNewsMessage(articles, category) {
   return message;
 }
 
-// Direct search function
+// Direct search function - NOW WITH ALL PLATFORMS
 async function directSearch(searchTerm) {
   try {
-    console.log(`🔍 Direct search for: ${searchTerm}`);
-    const results = await scrapeGoogleNews(searchTerm);
-    console.log(`✅ Found ${results.length} results for "${searchTerm}"`);
+    console.log(`🔍 Multi-platform search for: ${searchTerm}`);
+    const results = await directSearchWithPlatforms(searchTerm);
+    console.log(`✅ Found ${results.length} total results for "${searchTerm}"`);
     return results;
   } catch (error) {
     console.error(`❌ Search error for "${searchTerm}":`, error.message);
@@ -518,19 +598,61 @@ if (bot) {
     bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
   });
 
-  // CRICKET
-  bot.onText(/\/cricket/, async (msg) => {
+  // NATIONAL - Show ALL results
+  bot.onText(/\/national/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🏏 **Getting ALL Cricket news...**`);
+    bot.sendMessage(chatId, `🇮🇳 **Getting ALL National news...**\n\n🔍 Using ${SEARCH_KEYWORDS.national.length} keywords`);
     
-    let cricketNews = newsCache.filter(article => article.category === 'cricket');
+    let nationalNews = newsCache.filter(article => article.category === 'national');
     
-    if (cricketNews.length === 0) {
-      const freshNews = await fetchAllNews('cricket');
-      cricketNews = freshNews.length > 0 ? freshNews : createFallbackContent('cricket');
+    if (nationalNews.length === 0) {
+      bot.sendMessage(chatId, '🔄 Fetching fresh national content...');
+      const freshNews = await fetchAllNews('national');
+      nationalNews = freshNews.length > 0 ? freshNews : createFallbackContent('national');
+      newsCache.push(...nationalNews);
     }
     
-    const message = formatNewsMessage(cricketNews, 'Cricket');
+    const message = formatNewsMessage(nationalNews, 'National');
+    bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
+  });
+
+  // PAKISTAN - Show ALL results
+  bot.onText(/\/pakistan/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, `🇵🇰 **Getting ALL Pakistan news...**\n\n🔍 Using ${SEARCH_KEYWORDS.pakistan.length} keywords`);
+    
+    let pakistanNews = newsCache.filter(article => article.category === 'pakistan');
+    
+    if (pakistanNews.length === 0) {
+      bot.sendMessage(chatId, '🔄 Fetching fresh Pakistan content...');
+      const freshNews = await fetchAllNews('pakistan');
+      pakistanNews = freshNews.length > 0 ? freshNews : createFallbackContent('pakistan');
+      newsCache.push(...pakistanNews);
+    }
+    
+    const message = formatNewsMessage(pakistanNews, 'Pakistani');
+    bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
+  });
+
+  // LATEST - Show mix from all categories  
+  bot.onText(/\/latest/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, '🔄 **Getting latest viral news from ALL categories...**\n\n⏳ Mixing results from all sources...');
+    
+    if (newsCache.length === 0) {
+      bot.sendMessage(chatId, '🔄 Cache empty, running fresh aggregation...');
+      await aggregateNews();
+    }
+    
+    // Show latest 25 from all categories mixed
+    const latestNews = newsCache.slice(0, 25);
+    
+    if (latestNews.length === 0) {
+      bot.sendMessage(chatId, '❌ No cached news found. Use /refresh to get fresh content!');
+      return;
+    }
+    
+    const message = formatNewsMessage(latestNews, 'Latest Viral');
     bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
   });
 
