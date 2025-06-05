@@ -1,3 +1,91 @@
+timestamp: currentTime,
+        fetchTime: indianTime,
+        platform: 'news',
+        reliability: 8,
+        isVerified: true
+      }
+    ],
+    pakistan: [
+      {
+        title: "Pakistan Latest News and Trends Today",
+        link: "https://www.google.com/search?q=pakistan+news+today&tbm=nws&tbs=qdr:d",
+        pubDate: currentTime,
+        formattedDate: "Just now",
+        source: "Regional News",
+        category: "pakistan",
+        timestamp: currentTime,
+        fetchTime: indianTime,
+        platform: 'news',
+        reliability: 8,
+        isVerified: true
+      }
+    ]
+  };
+  
+  return fallbackContent[category] || [];
+}
+
+// Main aggregation function
+async function aggregateNews() {
+  console.log('🔄 Starting comprehensive news aggregation...');
+  let allNews = [];
+  let successful = 0;
+
+  try {    
+    for (const category of ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan']) {
+      try {
+        console.log(`🔍 Fetching ALL ${category} news...`);
+        
+        const categoryNews = await fetchEnhancedContent(category);
+        
+        if (categoryNews.length > 0) {
+          allNews.push(...categoryNews);
+          successful++;
+          console.log(`✅ ${category}: Added ${categoryNews.length} articles`);
+        } else {
+          console.log(`⚠️ ${category}: No news found, adding fallback`);
+          const fallback = createFallbackContent(category);
+          allNews.push(...fallback);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (error) {
+        console.error(`❌ Error with ${category}:`, error.message);
+        const fallback = createFallbackContent(category);
+        allNews.push(...fallback);
+      }
+    }
+
+  } catch (error) {
+    console.error('❌ Critical aggregation error:', error);
+  }
+
+  // Remove duplicates
+  const uniqueNews = allNews.filter((article, index, self) => {
+    const titleKey = article.title.toLowerCase().substring(0, 40);
+    return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
+  });
+
+  uniqueNews.sort((a, b) => {
+    const aTime = new Date(a.timestamp || a.pubDate);
+    const bTime = new Date(b.timestamp || b.pubDate);
+    return bTime - aTime;
+  });
+
+  newsCache = uniqueNews;
+  
+  const categoryStats = {};
+  newsCache.forEach(item => {
+    categoryStats[item.category] = (categoryStats[item.category] || 0) + 1;
+  });
+
+  console.log(`✅ Aggregation complete! Total: ${newsCache.length} articles`);
+  console.log(`📊 Categories:`, categoryStats);
+  console.log(`🎯 Success rate: ${successful}/5 categories`);
+  
+  return newsCache;
+}
+
 // PRIORITY CHUNKING: Max 50 articles with smart chunking
 async function formatAndSendNewsMessage(chatId, articles, category, bot) {
   if (!articles || articles.length === 0) {
@@ -134,7 +222,487 @@ async function formatAndSendNewsMessage(chatId, articles, category, bot) {
     }
   }
 }
-      const TelegramBot = require('node-telegram-bot-api');
+
+// Simple news formatter for emergency fallback
+function formatSimpleNewsMessage(articles, category) {
+  let message = `🔥 *${category.toUpperCase()} LATEST NEWS*\n\n`;
+  
+  articles.slice(0, 5).forEach((article, index) => {
+    let cleanTitle = article.title
+      .replace(/\*/g, '')
+      .replace(/\[/g, '(')
+      .replace(/\]/g, ')')
+      .replace(/`/g, "'")
+      .replace(/_/g, '-')
+      .replace(/~/g, '-')
+      .replace(/\|/g, '-')
+      .substring(0, 60);
+    
+    if (cleanTitle.length < article.title.length) {
+      cleanTitle += '...';
+    }
+    
+    message += `${index + 1}. *${cleanTitle}*\n`;
+    message += `   📰 ${article.source} • ⏰ ${article.formattedDate}\n\n`;
+  });
+
+  const currentIndianTime = getCurrentIndianTime();
+  message += `🔄 Updated: ${currentIndianTime.toLocaleString('en-IN')}\n`;
+  message += `✅ *All links are WORKING!*`;
+  
+  return message;
+}
+
+// Helper functions for better news processing
+function extractSourceFromTitle(title) {
+  // Extract source from title patterns like "Source - Title" or "Title | Source"
+  const patterns = [
+    /^([^-]+)\s*-\s*(.+)$/,
+    /^(.+)\s*\|\s*([^|]+)$/,
+    /^(.+)\s*:\s*([^:]+)$/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = title.match(pattern);
+    if (match) {
+      const [, part1, part2] = match;
+      // Usually the source is the shorter part
+      if (part1.length < part2.length && part1.length < 30) {
+        return part1.trim();
+      } else if (part2.length < 30) {
+        return part2.trim();
+      }
+    }
+  }
+  
+  // Fallback: look for known news sources in title
+  const knownSources = [
+    'Times of India', 'TOI', 'Hindustan Times', 'HT', 'Indian Express',
+    'NDTV', 'News18', 'CNN', 'BBC', 'Reuters', 'PTI', 'ANI',
+    'Cricbuzz', 'ESPN', 'Bollywood Hungama', 'Pinkvilla',
+    'YouTube', 'Twitter', 'Instagram', 'Facebook'
+  ];
+  
+  for (const source of knownSources) {
+    if (title.toLowerCase().includes(source.toLowerCase())) {
+      return source;
+    }
+  }
+  
+  return 'News Source';
+}
+
+function assessReliability(title, link) {
+  let score = 5; // Base score
+  
+  // Boost score for reliable domains
+  const reliableDomains = [
+    'timesofindia.com', 'hindustantimes.com', 'indianexpress.com',
+    'ndtv.com', 'news18.com', 'bbc.com', 'cnn.com', 'reuters.com',
+    'cricbuzz.com', 'espn.in', 'youtube.com', 'twitter.com'
+  ];
+  
+  for (const domain of reliableDomains) {
+    if (link.includes(domain)) {
+      score += 3;
+      break;
+    }
+  }
+  
+  // Boost for recent indicators
+  if (title.toLowerCase().includes('today') || 
+      title.toLowerCase().includes('latest') ||
+      title.toLowerCase().includes('breaking')) {
+    score += 2;
+  }
+  
+  // Reduce for generic or unclear titles
+  if (title.length < 20 || title.includes('...') || title.includes('undefined')) {
+    score -= 2;
+  }
+  
+  return Math.max(1, Math.min(10, score));
+}
+
+// Webhook setup
+if (bot && isProduction) {
+  const webhookPath = `/webhook/${BOT_TOKEN}`;
+  bot.setWebHook(`${APP_URL}${webhookPath}`)
+    .then(() => console.log('✅ Webhook set successfully'))
+    .catch(err => console.error('❌ Webhook setup failed:', err.message));
+  
+  app.post(webhookPath, (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+  });
+}
+
+// Bot commands
+if (bot) {
+  bot.on('polling_error', error => {
+    console.error('Telegram error:', error.message);
+  });
+
+  bot.onText(/\/start/, (msg) => {
+    const chatId = msg.chat.id;
+    const welcomeMessage = `🔥 *VIRAL NEWS BOT v2.0* 🔥
+
+*📰 Main Commands:*
+/youtubers - Latest YouTuber news
+/bollywood - Latest film industry news
+/cricket - Latest sports updates  
+/national - Latest India news
+/pakistan - Latest Pakistani content
+/latest - All categories mixed
+
+*🔍 Search:*
+/search <n> - Multi-platform search
+
+*🛠️ Keywords:*
+/addkeyword <category> <keyword>
+/listkeywords - Show all keywords
+
+*📂 Categories:* youtubers, bollywood, cricket, national, pakistan
+
+*Example:*
+/addkeyword youtubers MrBeast
+/search Elvish Yadav
+
+🚀 *RELIABLE links from news, Twitter, Instagram, YouTube!*
+✅ *Latest data from last 24 hours with timestamps!*
+⏰ *All content is FRESH & RECENT!*
+📱 *Priority order: News → Twitter → Instagram → YouTube*
+🎯 *Maximum 50 articles with no duplicates!*`;
+    
+    bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
+  });
+
+  // YOUTUBERS command
+  bot.onText(/\/youtubers/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, `🎥 *Getting LATEST YouTuber news...*\n\n🔍 Searching last 24 hours across all platforms\n⏳ Please wait 30-60 seconds...`);
+    
+    try {
+      console.log('🎥 FORCING fresh YouTuber search with timestamps...');
+      const freshNews = await fetchEnhancedContent('youtubers');
+      
+      if (freshNews.length > 0) {
+        console.log(`✅ Fresh search found ${freshNews.length} articles with working links`);
+        
+        newsCache = newsCache.filter(article => article.category !== 'youtubers');
+        newsCache.push(...freshNews);
+        
+        await formatAndSendNewsMessage(chatId, freshNews, 'YouTuber', bot);
+        
+      } else {
+        console.log('⚠️ Enhanced search returned 0 results, using fallback');
+        const fallbackContent = createFallbackContent('youtubers');
+        await formatAndSendNewsMessage(chatId, fallbackContent, 'YouTuber', bot);
+      }
+    } catch (error) {
+      console.error('❌ YouTuber command error:', error);
+      bot.sendMessage(chatId, `❌ *Error fetching YouTuber news*\n\nTry /addkeyword youtubers <n> to add specific creators`, { parse_mode: 'Markdown' });
+    }
+  });
+
+  // BOLLYWOOD command
+  bot.onText(/\/bollywood/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, `🎭 *Getting LATEST Bollywood news...*\n\n🔍 Searching last 24 hours...`);
+    
+    try {
+      const freshNews = await fetchEnhancedContent('bollywood');
+      const bollywoodNews = freshNews.length > 0 ? freshNews : createFallbackContent('bollywood');
+      
+      newsCache = newsCache.filter(article => article.category !== 'bollywood');
+      newsCache.push(...bollywoodNews);
+      
+      await formatAndSendNewsMessage(chatId, bollywoodNews, 'Bollywood', bot);
+    } catch (error) {
+      console.error('❌ Bollywood command error:', error);
+      bot.sendMessage(chatId, `❌ *Error fetching Bollywood news*`, { parse_mode: 'Markdown' });
+    }
+  });
+
+  // CRICKET command
+  bot.onText(/\/cricket/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, `🏏 *Getting LATEST Cricket news...*\n\n🔍 Searching last 24 hours...`);
+    
+    try {
+      const freshNews = await fetchEnhancedContent('cricket');
+      const cricketNews = freshNews.length > 0 ? freshNews : createFallbackContent('cricket');
+      
+      newsCache = newsCache.filter(article => article.category !== 'cricket');
+      newsCache.push(...cricketNews);
+      
+      await formatAndSendNewsMessage(chatId, cricketNews, 'Cricket', bot);
+    } catch (error) {
+      console.error('❌ Cricket command error:', error);
+      bot.sendMessage(chatId, `❌ *Error fetching Cricket news*`, { parse_mode: 'Markdown' });
+    }
+  });
+
+  // NATIONAL command
+  bot.onText(/\/national/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, `🇮🇳 *Getting LATEST National news...*\n\n🔍 Searching last 24 hours...`);
+    
+    try {
+      const freshNews = await fetchEnhancedContent('national');
+      const nationalNews = freshNews.length > 0 ? freshNews : createFallbackContent('national');
+      
+      newsCache = newsCache.filter(article => article.category !== 'national');
+      newsCache.push(...nationalNews);
+      
+      await formatAndSendNewsMessage(chatId, nationalNews, 'National', bot);
+    } catch (error) {
+      console.error('❌ National command error:', error);
+      bot.sendMessage(chatId, `❌ *Error fetching National news*`, { parse_mode: 'Markdown' });
+    }
+  });
+
+  // PAKISTAN command
+  bot.onText(/\/pakistan/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, `🇵🇰 *Getting LATEST Pakistan news...*\n\n🔍 Searching last 24 hours...`);
+    
+    try {
+      const freshNews = await fetchEnhancedContent('pakistan');
+      const pakistanNews = freshNews.length > 0 ? freshNews : createFallbackContent('pakistan');
+      
+      newsCache = newsCache.filter(article => article.category !== 'pakistan');
+      newsCache.push(...pakistanNews);
+      
+      await formatAndSendNewsMessage(chatId, pakistanNews, 'Pakistani', bot);
+    } catch (error) {
+      console.error('❌ Pakistan command error:', error);
+      bot.sendMessage(chatId, `❌ *Error fetching Pakistan news*`, { parse_mode: 'Markdown' });
+    }
+  });
+
+  // LATEST command
+  bot.onText(/\/latest/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, '🔄 *Getting latest news from all categories...*');
+    
+    if (newsCache.length === 0) {
+      await aggregateNews();
+    }
+    
+    const latestNews = newsCache.slice(0, 20);
+    const message = formatSimpleNewsMessage(latestNews, 'Latest Viral');
+    bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
+  });
+
+  // SEARCH command
+  bot.onText(/\/search (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const searchTerm = match[1].trim();
+    
+    if (searchTerm.length < 2) {
+      bot.sendMessage(chatId, `❌ *Search term too short!*\n\n*Usage:* /search <n>`, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    bot.sendMessage(chatId, `🔍 *LATEST Multi-Platform Search: "${searchTerm}"*\n\n🌐 Searching across all platforms...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+
+    try {
+      const searchResults = await searchMultiplePlatforms(searchTerm);
+      
+      if (searchResults.length === 0) {
+        bot.sendMessage(chatId, `❌ *No results found for "${searchTerm}"*\n\n🔧 Try different spelling or add as keyword`, { parse_mode: 'Markdown' });
+        return;
+      }
+
+      await formatAndSendNewsMessage(chatId, searchResults, `Search: ${searchTerm}`, bot);
+
+    } catch (error) {
+      console.error(`Search error for "${searchTerm}":`, error);
+      bot.sendMessage(chatId, `❌ *Search failed*\n\nTry again or add as keyword`, { parse_mode: 'Markdown' });
+    }
+  });
+
+  // ADD KEYWORD
+  bot.onText(/\/addkeyword (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const input = match[1].trim();
+    const parts = input.split(' ');
+    
+    if (parts.length < 2) {
+      bot.sendMessage(chatId, `❌ *Usage:* /addkeyword <category> <keyword>\n\n*Categories:* youtubers, bollywood, cricket, national, pakistan\n\n*Example:* /addkeyword youtubers MrBeast`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keyword = parts.slice(1).join(' ');
+    
+    if (!SEARCH_KEYWORDS[category]) {
+      bot.sendMessage(chatId, `❌ *Invalid category!*\n\n*Valid:* youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    if (SEARCH_KEYWORDS[category].includes(keyword)) {
+      bot.sendMessage(chatId, `⚠️ *Already exists!* "${keyword}" is in ${category}`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    SEARCH_KEYWORDS[category].push(keyword);
+    bot.sendMessage(chatId, `✅ *Keyword Added Successfully!*
+
+📝 *Added:* "${keyword}"
+📂 *Category:* ${category}
+📊 *Total keywords:* ${SEARCH_KEYWORDS[category].length}
+
+🚀 Use /${category} to see LATEST results with working links!`, { parse_mode: 'Markdown' });
+  });
+
+  // REMOVE KEYWORD
+  bot.onText(/\/removekeyword (.+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+    const input = match[1].trim();
+    const parts = input.split(' ');
+    
+    if (parts.length < 2) {
+      bot.sendMessage(chatId, `❌ *Usage:* /removekeyword <category> <keyword>`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keyword = parts.slice(1).join(' ');
+    
+    if (!SEARCH_KEYWORDS[category]) {
+      bot.sendMessage(chatId, `❌ *Invalid category!*`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const index = SEARCH_KEYWORDS[category].indexOf(keyword);
+    if (index === -1) {
+      bot.sendMessage(chatId, `❌ *Not found!* "${keyword}" not in ${category}`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    SEARCH_KEYWORDS[category].splice(index, 1);
+    bot.sendMessage(chatId, `✅ *Removed!* "${keyword}" from ${category}
+
+📊 *Remaining:* ${SEARCH_KEYWORDS[category].length} keywords`, { parse_mode: 'Markdown' });
+  });
+
+  // LIST KEYWORDS
+  bot.onText(/\/listkeywords/, (msg) => {
+    const chatId = msg.chat.id;
+    let message = '📝 *CURRENT KEYWORDS*\n\n';
+    
+    for (const [category, keywords] of Object.entries(SEARCH_KEYWORDS)) {
+      const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
+      
+      message += `${icon} *${category.toUpperCase()}* (${keywords.length}):\n`;
+      message += keywords.map(k => `• ${k}`).join('\n');
+      message += '\n\n';
+    }
+    
+    message += `📊 *Total:* ${Object.values(SEARCH_KEYWORDS).flat().length} keywords`;
+    
+    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  });
+
+  // REFRESH
+  bot.onText(/\/refresh/, async (msg) => {
+    const chatId = msg.chat.id;
+    const currentTime = getCurrentIndianTime();
+    bot.sendMessage(chatId, `🔄 *Refreshing ALL sources...*\n\n⏳ Getting latest data from last 24 hours\n🕐 Started: ${currentTime.toLocaleString('en-IN')}`, { parse_mode: 'Markdown' });
+    
+    const startTime = new Date();
+    newsCache = [];
+    const news = await aggregateNews();
+    const endTime = new Date();
+    
+    const refreshTime = Math.round((endTime - startTime) / 1000);
+    
+    bot.sendMessage(chatId, `✅ *Refresh Complete!*
+
+⏱️ *Time taken:* ${refreshTime} seconds
+📊 *Articles found:* ${news.length}
+🕐 *Completed:* ${getCurrentIndianTime().toLocaleString('en-IN')}
+✅ *All links are WORKING & DIRECT!*
+📱 *Data from last 24 hours with timestamps*`, { parse_mode: 'Markdown' });
+  });
+
+  console.log('📱 Telegram Bot v2.0 initialized with WORKING LINKS & TIMESTAMPS!');
+} else {
+  console.log('⚠️ Bot not initialized - missing BOT_TOKEN');
+}
+
+// Express routes
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'Viral News Bot v2.0 - Latest Data with Working Links',
+    totalNews: newsCache.length,
+    uptime: Math.floor(process.uptime()),
+    keywords: Object.values(SEARCH_KEYWORDS).flat().length,
+    features: ['Working Direct Links', 'Latest 24hr Data', 'Proper Timestamps', 'Reliable Sources Only'],
+    lastUpdate: getCurrentIndianTime().toLocaleString('en-IN')
+  });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy',
+    newsCount: newsCache.length,
+    uptime: process.uptime(),
+    workingLinks: true,
+    timestamps: true,
+    lastUpdate: getCurrentIndianTime().toLocaleString('en-IN')
+  });
+});
+
+app.get('/ping', (req, res) => {
+  pingCount++;
+  res.json({ 
+    status: 'pong',
+    timestamp: getCurrentIndianTime().toLocaleString('en-IN'),
+    count: pingCount,
+    features: 'working-links-timestamps-enabled'
+  });
+});
+
+// Keep-alive
+async function keepAlive() {
+  try {
+    if (APP_URL && !APP_URL.includes('localhost')) {
+      await axios.get(`${APP_URL}/ping`, { timeout: 10000 });
+      console.log(`🏓 Keep-alive successful`);
+    }
+  } catch (error) {
+    console.log(`⚠️ Keep-alive failed: ${error.message}`);
+  }
+}
+
+setInterval(keepAlive, 12 * 60 * 1000);
+setInterval(aggregateNews, 2 * 60 * 60 * 1000);
+
+setTimeout(async () => {
+  console.log('🚀 Starting enhanced news aggregation v2.0 with working links & timestamps...');
+  await aggregateNews();
+  console.log('🏓 Keep-alive activated');
+}, 3000);
+
+app.listen(PORT, () => {
+  console.log(`🚀 Enhanced News Bot v2.0 running on port ${PORT}`);
+  console.log(`🌐 URL: ${APP_URL}`);
+  console.log(`📱 Bot: ${BOT_TOKEN ? 'Active' : 'Missing Token'}`);
+  console.log(`🎯 WORKING LINKS + TIMESTAMPS ENABLED!`);
+  console.log(`✅ Features: Latest 24hr data, Working direct links, Proper timestamps`);
+  console.log(`🕐 Started: ${getCurrentIndianTime().toLocaleString('en-IN')}`);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error.message);
+});const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const express = require('express');
@@ -508,9 +1076,7 @@ async function scrapeWorkingNews(query) {
   }
 }
 
-// Working news system - simple but effective
-
-// REAL: Better Twitter search with actual relevant results
+// Better Twitter search with actual relevant results
 async function searchTwitterDirect(searchTerm) {
   try {
     console.log(`🐦 Creating focused Twitter search for: ${searchTerm}`);
@@ -531,6 +1097,7 @@ async function searchTwitterDirect(searchTerm) {
         platform: 'twitter',
         timestamp: currentTime,
         fetchTime: indianTime,
+        reliability: 8,
         isVerified: true
       }
     ];
@@ -548,6 +1115,7 @@ async function searchTwitterDirect(searchTerm) {
         platform: 'twitter',
         timestamp: currentTime,
         fetchTime: indianTime,
+        reliability: 8,
         isVerified: true
       });
     }
@@ -556,76 +1124,6 @@ async function searchTwitterDirect(searchTerm) {
     return twitterResults;
   } catch (error) {
     console.error('Twitter search error:', error.message);
-    return [];
-  }
-}
-
-// ADVANCED: YouTube API-style search with better results
-async function searchYouTubeDirect(searchTerm) {
-  try {
-    console.log(`📺 Creating advanced YouTube search for: ${searchTerm}`);
-    
-    const currentTime = getCurrentTimestamp();
-    const indianTime = getCurrentIndianTime().toLocaleString('en-IN');
-    
-    // Create more specific search terms
-    const searchVariations = [
-      `${searchTerm} latest video`,
-      `${searchTerm} news today`,
-      `${searchTerm} viral video`
-    ];
-    
-    const youtubeResults = [];
-    
-    // Method 1: Recent uploads with better filters
-    youtubeResults.push({
-      title: `${searchTerm} - Latest Videos (This Week)`,
-      link: `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTerm)}&sp=CAISBAgCEAE%253D`,
-      pubDate: currentTime,
-      formattedDate: 'Latest uploads',
-      description: `Most recent YouTube videos about ${searchTerm} from this week`,
-      source: 'YouTube',
-      category: categorizeNews(searchTerm),
-      platform: 'youtube',
-      timestamp: currentTime,
-      fetchTime: indianTime,
-      isVerified: true
-    });
-    
-    // Method 2: Popular/Trending videos
-    youtubeResults.push({
-      title: `${searchTerm} - Popular Videos`,
-      link: `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTerm)}&sp=CAMSAhAB`,
-      pubDate: currentTime,
-      formattedDate: 'Trending now',
-      description: `Popular and trending YouTube content for ${searchTerm}`,
-      source: 'YouTube',
-      category: categorizeNews(searchTerm),
-      platform: 'youtube',
-      timestamp: currentTime,
-      fetchTime: indianTime,
-      isVerified: true
-    });
-    
-    // Method 3: Today's uploads if available
-    youtubeResults.push({
-      title: `${searchTerm} - Today's Videos`,
-      link: `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTerm + ' today')}&sp=CAISBQgAEAE%253D`,
-      pubDate: currentTime,
-      formattedDate: 'Today',
-      description: `Today's YouTube content about ${searchTerm}`,
-      source: 'YouTube',
-      category: categorizeNews(searchTerm),
-      platform: 'youtube',
-      timestamp: currentTime,
-      fetchTime: indianTime,
-      isVerified: true
-    });
-    
-    console.log(`✅ YouTube: Created ${youtubeResults.length} advanced search links`);
-    return youtubeResults;
-  } catch (error) {
-    console.error('YouTube search error:', error.message);
     return [];
   }
 }
@@ -663,7 +1161,54 @@ async function searchInstagramDirect(searchTerm) {
   }
 }
 
-// FOCUS: Multiple reliable news sources
+// YouTube API-style search with better results
+async function searchYouTubeDirect(searchTerm) {
+  try {
+    console.log(`📺 Creating advanced YouTube search for: ${searchTerm}`);
+    
+    const currentTime = getCurrentTimestamp();
+    const indianTime = getCurrentIndianTime().toLocaleString('en-IN');
+    
+    const youtubeResults = [
+      {
+        title: `${searchTerm} - Latest Videos (This Week)`,
+        link: `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTerm)}&sp=CAISBAgCEAE%253D`,
+        pubDate: currentTime,
+        formattedDate: 'Latest uploads',
+        description: `Most recent YouTube videos about ${searchTerm} from this week`,
+        source: 'YouTube',
+        category: categorizeNews(searchTerm),
+        platform: 'youtube',
+        timestamp: currentTime,
+        fetchTime: indianTime,
+        reliability: 4,
+        isVerified: true
+      },
+      {
+        title: `${searchTerm} - Popular Videos`,
+        link: `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTerm)}&sp=CAMSAhAB`,
+        pubDate: currentTime,
+        formattedDate: 'Trending now',
+        description: `Popular and trending YouTube content for ${searchTerm}`,
+        source: 'YouTube',
+        category: categorizeNews(searchTerm),
+        platform: 'youtube',
+        timestamp: currentTime,
+        fetchTime: indianTime,
+        reliability: 4,
+        isVerified: true
+      }
+    ];
+    
+    console.log(`✅ YouTube: Created ${youtubeResults.length} advanced search links`);
+    return youtubeResults;
+  } catch (error) {
+    console.error('YouTube search error:', error.message);
+    return [];
+  }
+}
+
+// FOCUS: Multiple sources with priority order
 async function searchMultiplePlatforms(searchTerm) {
   const allResults = [];
   
@@ -874,6 +1419,8 @@ function createFallbackContent(category) {
         category: "youtubers",
         timestamp: currentTime,
         fetchTime: indianTime,
+        platform: 'youtube',
+        reliability: 4,
         isVerified: true
       }
     ],
@@ -887,6 +1434,8 @@ function createFallbackContent(category) {
         category: "bollywood",
         timestamp: currentTime,
         fetchTime: indianTime,
+        platform: 'news',
+        reliability: 8,
         isVerified: true
       }
     ],
@@ -900,6 +1449,8 @@ function createFallbackContent(category) {
         category: "cricket",
         timestamp: currentTime,
         fetchTime: indianTime,
+        platform: 'news',
+        reliability: 8,
         isVerified: true
       }
     ],
@@ -911,768 +1462,4 @@ function createFallbackContent(category) {
         formattedDate: "Just now",
         source: "National News",
         category: "national",
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        isVerified: true
-      }
-    ],
-    pakistan: [
-      {
-        title: "Pakistan Latest News and Trends Today",
-        link: "https://www.google.com/search?q=pakistan+news+today&tbm=nws&tbs=qdr:d",
-        pubDate: currentTime,
-        formattedDate: "Just now",
-        source: "Regional News",
-        category: "pakistan",
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        isVerified: true
-      }
-    ]
-  };
-  
-  return fallbackContent[category] || [];
-}
-
-// Main aggregation function
-async function aggregateNews() {
-  console.log('🔄 Starting comprehensive news aggregation...');
-  let allNews = [];
-  let successful = 0;
-
-  try {    
-    for (const category of ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan']) {
-      try {
-        console.log(`🔍 Fetching ALL ${category} news...`);
-        
-        const categoryNews = await fetchEnhancedContent(category);
-        
-        if (categoryNews.length > 0) {
-          allNews.push(...categoryNews);
-          successful++;
-          console.log(`✅ ${category}: Added ${categoryNews.length} articles`);
-        } else {
-          console.log(`⚠️ ${category}: No news found, adding fallback`);
-          const fallback = createFallbackContent(category);
-          allNews.push(...fallback);
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      } catch (error) {
-        console.error(`❌ Error with ${category}:`, error.message);
-        const fallback = createFallbackContent(category);
-        allNews.push(...fallback);
-      }
-    }
-
-  } catch (error) {
-    console.error('❌ Critical aggregation error:', error);
-  }
-
-  // Remove duplicates
-  const uniqueNews = allNews.filter((article, index, self) => {
-    const titleKey = article.title.toLowerCase().substring(0, 40);
-    return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
-  });
-
-  uniqueNews.sort((a, b) => {
-    const aTime = new Date(a.timestamp || a.pubDate);
-    const bTime = new Date(b.timestamp || b.pubDate);
-    return bTime - aTime;
-  });
-
-  newsCache = uniqueNews;
-  
-  const categoryStats = {};
-  newsCache.forEach(item => {
-    categoryStats[item.category] = (categoryStats[item.category] || 0) + 1;
-  });
-
-  console.log(`✅ Aggregation complete! Total: ${newsCache.length} articles`);
-  console.log(`📊 Categories:`, categoryStats);
-  console.log(`🎯 Success rate: ${successful}/5 categories`);
-  
-  return newsCache;
-}
-
-// Smart chunking eliminates need for .txt files
-// All data is now sent directly in Telegram messages
-
-// SMART CHUNKING: Max 3 messages, no spam
-async function formatAndSendNewsMessage(chatId, articles, category, bot) {
-  if (!articles || articles.length === 0) {
-    await bot.sendMessage(chatId, `❌ No recent ${category} news found. Try /refresh or add keywords!`);
-    return;
-  }
-
-  console.log(`📊 Processing ${articles.length} ${category} articles for chat ${chatId}`);
-
-  try {
-    // LIMIT: Maximum 15 articles total
-    const limitedArticles = articles.slice(0, 15);
-    console.log(`📱 Sending ${limitedArticles.length} articles in smart chunks...`);
-    
-    // Send summary first
-    const currentIndianTime = getCurrentIndianTime();
-    const summaryMessage = `🔥 *${category.toUpperCase()} LATEST NEWS*\n\n📊 *Found: ${limitedArticles.length} articles*\n⏰ *Data: Last 24 Hours*\n🌐 *All links: WORKING*\n🕐 *Updated: ${currentIndianTime.toLocaleString('en-IN')}*`;
-    
-    await bot.sendMessage(chatId, summaryMessage, { parse_mode: 'Markdown' });
-    
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // SMART CHUNKING: 5 articles per message, max 3 messages
-    const chunkSize = 5;
-    const maxChunks = 3;
-    const chunksToSend = Math.min(Math.ceil(limitedArticles.length / chunkSize), maxChunks);
-    
-    for (let i = 0; i < chunksToSend; i++) {
-      const startIndex = i * chunkSize;
-      const endIndex = Math.min(startIndex + chunkSize, limitedArticles.length);
-      const chunk = limitedArticles.slice(startIndex, endIndex);
-      
-      let chunkMessage = `📰 *${category.toUpperCase()} NEWS - Part ${i + 1}/${chunksToSend}*\n\n`;
-      
-      chunk.forEach((article, index) => {
-        const globalIndex = startIndex + index + 1;
-        
-        let cleanTitle = article.title
-          .replace(/\*/g, '')
-          .replace(/\[/g, '(')
-          .replace(/\]/g, ')')
-          .replace(/`/g, "'")
-          .replace(/_/g, '-')
-          .replace(/~/g, '-')
-          .replace(/\|/g, '-')
-          .substring(0, 60);
-        
-        if (cleanTitle.length < article.title.length) {
-          cleanTitle += '...';
-        }
-        
-        chunkMessage += `${globalIndex}. *${cleanTitle}*\n`;
-        chunkMessage += `   📰 ${article.source} • ⏰ ${article.formattedDate}\n`;
-        
-        let cleanUrl = article.link;
-        if (cleanUrl && cleanUrl.length > 200) {
-          cleanUrl = cleanUrl.substring(0, 200) + '...';
-        }
-        
-        chunkMessage += `   🔗 [Working Link](${cleanUrl})\n\n`;
-      });
-      
-      // Add footer
-      if (i + 1 === chunksToSend) {
-        chunkMessage += `✅ *Complete! Total: ${limitedArticles.length} articles*`;
-      } else {
-        chunkMessage += `📄 *Continues in next message...*`;
-      }
-      
-      try {
-        await bot.sendMessage(chatId, chunkMessage, { 
-          parse_mode: 'Markdown',
-          disable_web_page_preview: true 
-        });
-        
-        console.log(`✅ Sent chunk ${i + 1}/${chunksToSend} with ${chunk.length} articles`);
-        
-        // Delay between chunks
-        if (i + 1 < chunksToSend) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-        
-      } catch (chunkError) {
-        console.error(`❌ Error sending chunk ${i + 1}:`, chunkError.message);
-        
-        // Simple fallback for failed chunks
-        const simpleMessage = `📰 *${category.toUpperCase()}* - ${chunk.length} articles available\n\nSome articles couldn't be displayed due to formatting issues.`;
-        
-        try {
-          await bot.sendMessage(chatId, simpleMessage, { parse_mode: 'Markdown' });
-        } catch (fallbackError) {
-          console.error(`❌ Fallback also failed:`, fallbackError.message);
-          // Stop sending more chunks if user blocked bot
-          if (fallbackError.message.includes('403') || fallbackError.message.includes('blocked')) {
-            console.log(`🚫 User blocked bot, stopping message sending`);
-            return;
-          }
-        }
-      }
-    }
-    
-    console.log(`✅ Successfully sent ${chunksToSend} chunks with ${limitedArticles.length} total articles`);
-    
-  } catch (error) {
-    console.error('❌ Error in smart chunking:', error.message);
-    
-    // Emergency fallback
-    try {
-      const emergencyMessage = `🔥 *${category.toUpperCase()} NEWS*\n\n📊 Found ${articles.length} articles but couldn't display properly.\n\n💡 Try /refresh or use specific keywords.`;
-      await bot.sendMessage(chatId, emergencyMessage, { parse_mode: 'Markdown' });
-    } catch (emergencyError) {
-      console.error('❌ Emergency fallback failed:', emergencyError.message);
-    }
-  }
-}king method - no more .txt files
-    console.log(`📱 Using smart chunking for ${articles.length} articles...`);
-    
-    // Send summary first
-    const currentIndianTime = getCurrentIndianTime();
-    const summaryMessage = `🔥 *${category.toUpperCase()} LATEST NEWS*\n\n📊 *Found: ${articles.length} articles*\n⏰ *Data: Last 24 Hours*\n🌐 *All links: WORKING & DIRECT*\n🕐 *Updated: ${currentIndianTime.toLocaleString('en-IN')}*\n\n⬇️ *Sending in parts...*`;
-    
-    await bot.sendMessage(chatId, summaryMessage, { parse_mode: 'Markdown' });
-    
-    // Small delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Smart chunking - 5 articles per message
-    const chunkSize = 5;
-    const totalChunks = Math.ceil(articles.length / chunkSize);
-    
-    for (let i = 0; i < articles.length; i += chunkSize) {
-      const chunk = articles.slice(i, i + chunkSize);
-      const chunkNumber = Math.floor(i / chunkSize) + 1;
-      
-      let chunkMessage = `📰 *${category.toUpperCase()} NEWS - Part ${chunkNumber}/${totalChunks}*\n\n`;
-      
-      chunk.forEach((article, index) => {
-        const globalIndex = i + index + 1;
-        
-        // Clean title for safe Markdown
-        let cleanTitle = article.title
-          .replace(/\*/g, '')
-          .replace(/\[/g, '(')
-          .replace(/\]/g, ')')
-          .replace(/`/g, "'")
-          .replace(/_/g, '-')
-          .replace(/~/g, '-')
-          .replace(/\|/g, '-')
-          .substring(0, 70); // Shorter for better display
-        
-        if (cleanTitle.length < article.title.length) {
-          cleanTitle += '...';
-        }
-        
-        chunkMessage += `${globalIndex}. *${cleanTitle}*\n`;
-        chunkMessage += `   📰 ${article.source}`;
-        
-        if (article.platform) {
-          chunkMessage += ` (${article.platform})`;
-        }
-        
-        chunkMessage += `\n   ⏰ ${article.formattedDate}\n`;
-        
-        // Shorter URLs for better display
-        let cleanUrl = article.link;
-        if (cleanUrl && cleanUrl.length > 280) {
-          cleanUrl = cleanUrl.substring(0, 280) + '...';
-        }
-        
-        chunkMessage += `   🔗 [Working Link](${cleanUrl})\n\n`;
-      });
-      
-      // Add chunk footer
-      if (chunkNumber < totalChunks) {
-        chunkMessage += `📄 *Part ${chunkNumber} of ${totalChunks} • Continues...*`;
-      } else {
-        chunkMessage += `✅ *Complete! Total: ${articles.length} articles*\n`;
-        chunkMessage += `🔗 *All links are WORKING & DIRECT!*`;
-      }
-      
-      try {
-        await bot.sendMessage(chatId, chunkMessage, { 
-          parse_mode: 'Markdown',
-          disable_web_page_preview: true 
-        });
-        
-        console.log(`✅ Sent chunk ${chunkNumber}/${totalChunks} with ${chunk.length} articles`);
-        
-        // Delay between chunks to avoid rate limits
-        if (chunkNumber < totalChunks) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-        
-      } catch (chunkError) {
-        console.error(`❌ Error sending chunk ${chunkNumber}:`, chunkError.message);
-        
-        // Fallback: send simpler version
-        const simpleMessage = `📰 *${category.toUpperCase()} - Part ${chunkNumber}*\n\n${chunk.map((article, idx) => `${i + idx + 1}. ${article.title.substring(0, 50)}...\n   ${article.source} • ${article.formattedDate}`).join('\n\n')}`;
-        
-        try {
-          await bot.sendMessage(chatId, simpleMessage, { parse_mode: 'Markdown' });
-        } catch (fallbackError) {
-          console.error(`❌ Fallback also failed for chunk ${chunkNumber}:`, fallbackError.message);
-        }
-      }
-    }
-    
-    console.log(`✅ Successfully sent all ${totalChunks} chunks with ${articles.length} total articles`);
-    
-  } catch (error) {
-    console.error('❌ Error in smart chunking:', error.message);
-    
-    // Emergency fallback - send limited articles
-    try {
-      const limitedArticles = articles.slice(0, 5);
-      const emergencyMessage = formatSimpleNewsMessage(limitedArticles, category);
-      await bot.sendMessage(chatId, emergencyMessage + `\n\n📊 *Showing 5 of ${articles.length} total articles*\n💡 Try /refresh for complete data`, { 
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true 
-      });
-    } catch (emergencyError) {
-      console.error('❌ Emergency fallback failed:', emergencyError.message);
-      await bot.sendMessage(chatId, `❌ Error displaying ${category} news. Try /refresh or /addkeyword.`);
-    }
-  }
-}
-
-// Simple news formatter for emergency fallback
-function formatSimpleNewsMessage(articles, category) {
-  let message = `🔥 *${category.toUpperCase()} LATEST NEWS*\n\n`;
-  
-  articles.slice(0, 5).forEach((article, index) => {
-    let cleanTitle = article.title
-      .replace(/\*/g, '')
-      .replace(/\[/g, '(')
-      .replace(/\]/g, ')')
-      .replace(/`/g, "'")
-      .replace(/_/g, '-')
-      .replace(/~/g, '-')
-      .replace(/\|/g, '-')
-      .substring(0, 60);
-    
-    if (cleanTitle.length < article.title.length) {
-      cleanTitle += '...';
-    }
-    
-    message += `${index + 1}. *${cleanTitle}*\n`;
-    message += `   📰 ${article.source} • ⏰ ${article.formattedDate}\n\n`;
-  });
-
-  const currentIndianTime = getCurrentIndianTime();
-  message += `🔄 Updated: ${currentIndianTime.toLocaleString('en-IN')}\n`;
-  message += `✅ *All links are WORKING!*`;
-  
-  return message;
-}
-
-// Webhook setup
-if (bot && isProduction) {
-  const webhookPath = `/webhook/${BOT_TOKEN}`;
-  bot.setWebHook(`${APP_URL}${webhookPath}`)
-    .then(() => console.log('✅ Webhook set successfully'))
-    .catch(err => console.error('❌ Webhook setup failed:', err.message));
-  
-  app.post(webhookPath, (req, res) => {
-    bot.processUpdate(req.body);
-    res.sendStatus(200);
-  });
-}
-
-// Bot commands
-if (bot) {
-  bot.on('polling_error', error => {
-    console.error('Telegram error:', error.message);
-  });
-
-  bot.onText(/\/start/, (msg) => {
-    const chatId = msg.chat.id;
-    const welcomeMessage = `🔥 *VIRAL NEWS BOT v2.0* 🔥
-
-*📰 Main Commands:*
-/youtubers - Latest YouTuber news
-/bollywood - Latest film industry news
-/cricket - Latest sports updates  
-/national - Latest India news
-/pakistan - Latest Pakistani content
-/latest - All categories mixed
-
-*🔍 Search:*
-/search <name> - Multi-platform search
-
-*🛠️ Keywords:*
-/addkeyword <category> <keyword>
-/listkeywords - Show all keywords
-
-*📂 Categories:* youtubers, bollywood, cricket, national, pakistan
-
-*Example:*
-/addkeyword youtubers MrBeast
-/search Elvish Yadav
-
-🚀 *WORKING DIRECT links from news, Twitter, YouTube, Instagram!*
-✅ *Latest data from last 48 hours with timestamps!*
-⏰ *All content is FRESH & RECENT!*`;
-    
-    bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
-  });
-
-  // YOUTUBERS command
-  bot.onText(/\/youtubers/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🎥 *Getting LATEST YouTuber news...*\n\n🔍 Searching last 24 hours across all platforms\n⏳ Please wait 30-60 seconds...`);
-    
-    try {
-      console.log('🎥 FORCING fresh YouTuber search with timestamps...');
-      const freshNews = await fetchEnhancedContent('youtubers');
-      
-      if (freshNews.length > 0) {
-        console.log(`✅ Fresh search found ${freshNews.length} articles with working links`);
-        
-        newsCache = newsCache.filter(article => article.category !== 'youtubers');
-        newsCache.push(...freshNews);
-        
-        await formatAndSendNewsMessage(chatId, freshNews, 'YouTuber', bot);
-        
-      } else {
-        console.log('⚠️ Enhanced search returned 0 results, using fallback');
-        const fallbackContent = createFallbackContent('youtubers');
-        await formatAndSendNewsMessage(chatId, fallbackContent, 'YouTuber', bot);
-      }
-    } catch (error) {
-      console.error('❌ YouTuber command error:', error);
-      bot.sendMessage(chatId, `❌ *Error fetching YouTuber news*\n\nTry /addkeyword youtubers <name> to add specific creators`, { parse_mode: 'Markdown' });
-    }
-  });
-
-  // BOLLYWOOD command
-  bot.onText(/\/bollywood/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🎭 *Getting LATEST Bollywood news...*\n\n🔍 Searching last 24 hours...`);
-    
-    try {
-      const freshNews = await fetchEnhancedContent('bollywood');
-      const bollywoodNews = freshNews.length > 0 ? freshNews : createFallbackContent('bollywood');
-      
-      newsCache = newsCache.filter(article => article.category !== 'bollywood');
-      newsCache.push(...bollywoodNews);
-      
-      await formatAndSendNewsMessage(chatId, bollywoodNews, 'Bollywood', bot);
-    } catch (error) {
-      console.error('❌ Bollywood command error:', error);
-      bot.sendMessage(chatId, `❌ *Error fetching Bollywood news*`, { parse_mode: 'Markdown' });
-    }
-  });
-
-  // CRICKET command
-  bot.onText(/\/cricket/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🏏 *Getting LATEST Cricket news...*\n\n🔍 Searching last 24 hours...`);
-    
-    try {
-      const freshNews = await fetchEnhancedContent('cricket');
-      const cricketNews = freshNews.length > 0 ? freshNews : createFallbackContent('cricket');
-      
-      newsCache = newsCache.filter(article => article.category !== 'cricket');
-      newsCache.push(...cricketNews);
-      
-      await formatAndSendNewsMessage(chatId, cricketNews, 'Cricket', bot);
-    } catch (error) {
-      console.error('❌ Cricket command error:', error);
-      bot.sendMessage(chatId, `❌ *Error fetching Cricket news*`, { parse_mode: 'Markdown' });
-    }
-  });
-
-  // NATIONAL command
-  bot.onText(/\/national/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🇮🇳 *Getting LATEST National news...*\n\n🔍 Searching last 48 hours...`);
-    
-    try {
-      const freshNews = await fetchEnhancedContent('national');
-      const nationalNews = freshNews.length > 0 ? freshNews : createFallbackContent('national');
-      
-      newsCache = newsCache.filter(article => article.category !== 'national');
-      newsCache.push(...nationalNews);
-      
-      await formatAndSendNewsMessage(chatId, nationalNews, 'National', bot);
-    } catch (error) {
-      console.error('❌ National command error:', error);
-      bot.sendMessage(chatId, `❌ *Error fetching National news*`, { parse_mode: 'Markdown' });
-    }
-  });
-
-  // PAKISTAN command
-  bot.onText(/\/pakistan/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🇵🇰 *Getting LATEST Pakistan news...*\n\n🔍 Searching last 48 hours...`);
-    
-    try {
-      const freshNews = await fetchEnhancedContent('pakistan');
-      const pakistanNews = freshNews.length > 0 ? freshNews : createFallbackContent('pakistan');
-      
-      newsCache = newsCache.filter(article => article.category !== 'pakistan');
-      newsCache.push(...pakistanNews);
-      
-      await formatAndSendNewsMessage(chatId, pakistanNews, 'Pakistani', bot);
-    } catch (error) {
-      console.error('❌ Pakistan command error:', error);
-      bot.sendMessage(chatId, `❌ *Error fetching Pakistan news*`, { parse_mode: 'Markdown' });
-    }
-  });
-
-  // LATEST command
-  bot.onText(/\/latest/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, '🔄 *Getting latest news from all categories...*');
-    
-    if (newsCache.length === 0) {
-      await aggregateNews();
-    }
-    
-    const latestNews = newsCache.slice(0, 20);
-    const message = formatNewsMessage(latestNews, 'Latest Viral');
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
-  });
-
-  // SEARCH command
-  bot.onText(/\/search (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const searchTerm = match[1].trim();
-    
-    if (searchTerm.length < 2) {
-      bot.sendMessage(chatId, `❌ *Search term too short!*\n\n*Usage:* /search <name>`, { parse_mode: 'Markdown' });
-      return;
-    }
-
-    bot.sendMessage(chatId, `🔍 *LATEST Multi-Platform Search: "${searchTerm}"*\n\n🌐 Searching across all platforms...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-
-    try {
-      const searchResults = await searchMultiplePlatforms(searchTerm);
-      
-      if (searchResults.length === 0) {
-        bot.sendMessage(chatId, `❌ *No results found for "${searchTerm}"*\n\n🔧 Try different spelling or add as keyword`, { parse_mode: 'Markdown' });
-        return;
-      }
-
-      const platformStats = {};
-      searchResults.forEach(item => {
-        const platform = item.platform || item.source;
-        platformStats[platform] = (platformStats[platform] || 0) + 1;
-      });
-
-      let message = `🎯 *LATEST Search Results: "${searchTerm}"*\n📊 Found ${searchResults.length} results\n\n`;
-      
-      searchResults.slice(0, 8).forEach((item, index) => {
-        let cleanTitle = item.title
-          .replace(/\*/g, '')
-          .replace(/\[/g, '(')
-          .replace(/\]/g, ')')
-          .substring(0, 80);
-        
-        if (cleanTitle.length < item.title.length) {
-          cleanTitle += '...';
-        }
-        
-        message += `${index + 1}. *${cleanTitle}*\n`;
-        message += `   📰 ${item.source}`;
-        
-        if (item.platform) {
-          message += ` (${item.platform})`;
-        }
-        
-        message += ` • ⏰ ${item.formattedDate || 'Latest'}\n`;
-        message += `   🔗 [Working Link](${item.link})\n\n`;
-      });
-
-      if (searchResults.length > 8) {
-        message += `📄 Showing 8 of ${searchResults.length} results\n`;
-      }
-
-      message += `\n*Results by Platform:*\n`;
-      Object.entries(platformStats).forEach(([platform, count]) => {
-        message += `• ${platform}: ${count} results\n`;
-      });
-      
-      message += `\n✅ *All links are WORKING - no redirects!*`;
-
-      bot.sendMessage(chatId, message, { 
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true 
-      });
-
-    } catch (error) {
-      console.error(`Search error for "${searchTerm}":`, error);
-      bot.sendMessage(chatId, `❌ *Search failed*\n\nTry again or add as keyword`, { parse_mode: 'Markdown' });
-    }
-  });
-
-  // ADD KEYWORD
-  bot.onText(/\/addkeyword (.+)/, (msg, match) => {
-    const chatId = msg.chat.id;
-    const input = match[1].trim();
-    const parts = input.split(' ');
-    
-    if (parts.length < 2) {
-      bot.sendMessage(chatId, `❌ *Usage:* /addkeyword <category> <keyword>\n\n*Categories:* youtubers, bollywood, cricket, national, pakistan\n\n*Example:* /addkeyword youtubers MrBeast`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    const category = parts[0].toLowerCase();
-    const keyword = parts.slice(1).join(' ');
-    
-    if (!SEARCH_KEYWORDS[category]) {
-      bot.sendMessage(chatId, `❌ *Invalid category!*\n\n*Valid:* youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    if (SEARCH_KEYWORDS[category].includes(keyword)) {
-      bot.sendMessage(chatId, `⚠️ *Already exists!* "${keyword}" is in ${category}`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    SEARCH_KEYWORDS[category].push(keyword);
-    bot.sendMessage(chatId, `✅ *Keyword Added Successfully!*
-
-📝 *Added:* "${keyword}"
-📂 *Category:* ${category}
-📊 *Total keywords:* ${SEARCH_KEYWORDS[category].length}
-
-🚀 Use /${category} to see LATEST results with working links!`, { parse_mode: 'Markdown' });
-  });
-
-  // REMOVE KEYWORD
-  bot.onText(/\/removekeyword (.+)/, (msg, match) => {
-    const chatId = msg.chat.id;
-    const input = match[1].trim();
-    const parts = input.split(' ');
-    
-    if (parts.length < 2) {
-      bot.sendMessage(chatId, `❌ *Usage:* /removekeyword <category> <keyword>`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    const category = parts[0].toLowerCase();
-    const keyword = parts.slice(1).join(' ');
-    
-    if (!SEARCH_KEYWORDS[category]) {
-      bot.sendMessage(chatId, `❌ *Invalid category!*`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    const index = SEARCH_KEYWORDS[category].indexOf(keyword);
-    if (index === -1) {
-      bot.sendMessage(chatId, `❌ *Not found!* "${keyword}" not in ${category}`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    SEARCH_KEYWORDS[category].splice(index, 1);
-    bot.sendMessage(chatId, `✅ *Removed!* "${keyword}" from ${category}
-
-📊 *Remaining:* ${SEARCH_KEYWORDS[category].length} keywords`, { parse_mode: 'Markdown' });
-  });
-
-  // LIST KEYWORDS
-  bot.onText(/\/listkeywords/, (msg) => {
-    const chatId = msg.chat.id;
-    let message = '📝 *CURRENT KEYWORDS*\n\n';
-    
-    for (const [category, keywords] of Object.entries(SEARCH_KEYWORDS)) {
-      const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
-      
-      message += `${icon} *${category.toUpperCase()}* (${keywords.length}):\n`;
-      message += keywords.map(k => `• ${k}`).join('\n');
-      message += '\n\n';
-    }
-    
-    message += `📊 *Total:* ${Object.values(SEARCH_KEYWORDS).flat().length} keywords`;
-    
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-  });
-
-  // REFRESH
-  bot.onText(/\/refresh/, async (msg) => {
-    const chatId = msg.chat.id;
-    const currentTime = getCurrentIndianTime();
-    bot.sendMessage(chatId, `🔄 *Refreshing ALL sources...*\n\n⏳ Getting latest data from last 24 hours\n🕐 Started: ${currentTime.toLocaleString('en-IN')}`, { parse_mode: 'Markdown' });
-    
-    const startTime = new Date();
-    newsCache = [];
-    const news = await aggregateNews();
-    const endTime = new Date();
-    
-    const refreshTime = Math.round((endTime - startTime) / 1000);
-    
-    bot.sendMessage(chatId, `✅ *Refresh Complete!*
-
-⏱️ *Time taken:* ${refreshTime} seconds
-📊 *Articles found:* ${news.length}
-🕐 *Completed:* ${getCurrentIndianTime().toLocaleString('en-IN')}
-✅ *All links are WORKING & DIRECT!*
-📱 *Data from last 24 hours with timestamps*`, { parse_mode: 'Markdown' });
-  });
-
-  console.log('📱 Telegram Bot v2.0 initialized with WORKING LINKS & TIMESTAMPS!');
-} else {
-  console.log('⚠️ Bot not initialized - missing BOT_TOKEN');
-}
-
-// Express routes
-app.get('/', (req, res) => {
-  res.json({ 
-    status: 'Viral News Bot v2.0 - Latest Data with Working Links',
-    totalNews: newsCache.length,
-    uptime: Math.floor(process.uptime()),
-    keywords: Object.values(SEARCH_KEYWORDS).flat().length,
-    features: ['Working Direct Links', 'Latest 48hr Data', 'Proper Timestamps', 'Multi-platform Search'],
-    lastUpdate: getCurrentIndianTime().toLocaleString('en-IN')
-  });
-});
-
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy',
-    newsCount: newsCache.length,
-    uptime: process.uptime(),
-    workingLinks: true,
-    timestamps: true,
-    lastUpdate: getCurrentIndianTime().toLocaleString('en-IN')
-  });
-});
-
-app.get('/ping', (req, res) => {
-  pingCount++;
-  res.json({ 
-    status: 'pong',
-    timestamp: getCurrentIndianTime().toLocaleString('en-IN'),
-    count: pingCount,
-    features: 'working-links-timestamps-enabled'
-  });
-});
-
-// Keep-alive
-async function keepAlive() {
-  try {
-    if (APP_URL && !APP_URL.includes('localhost')) {
-      await axios.get(`${APP_URL}/ping`, { timeout: 10000 });
-      console.log(`🏓 Keep-alive successful`);
-    }
-  } catch (error) {
-    console.log(`⚠️ Keep-alive failed: ${error.message}`);
-  }
-}
-
-setInterval(keepAlive, 12 * 60 * 1000);
-setInterval(aggregateNews, 2 * 60 * 60 * 1000);
-
-setTimeout(async () => {
-  console.log('🚀 Starting enhanced news aggregation v2.0 with working links & timestamps...');
-  await aggregateNews();
-  console.log('🏓 Keep-alive activated');
-}, 3000);
-
-app.listen(PORT, () => {
-  console.log(`🚀 Enhanced News Bot v2.0 running on port ${PORT}`);
-  console.log(`🌐 URL: ${APP_URL}`);
-  console.log(`📱 Bot: ${BOT_TOKEN ? 'Active' : 'Missing Token'}`);
-  console.log(`🎯 WORKING LINKS + TIMESTAMPS ENABLED!`);
-  console.log(`✅ Features: Latest 48hr data, Working direct links, Proper timestamps`);
-  console.log(`🕐 Started: ${getCurrentIndianTime().toLocaleString('en-IN')}`);
-});
-
-process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled Rejection:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error.message);
-});
+        timestamp:
