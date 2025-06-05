@@ -581,109 +581,144 @@ if (bot) {
     bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
   });
 
-  // YOUTUBERS command
+  // YOUTUBERS command - Force fresh enhanced search
   bot.onText(/\/youtubers/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🎥 *Getting ALL YouTuber news...*\n\n🔍 Using enhanced multi-source search\n⏳ Please wait...`);
+    bot.sendMessage(chatId, `🎥 *Getting ALL YouTuber news...*\n\n🔍 Running fresh enhanced multi-source search\n⏳ Please wait 30-60 seconds...`);
     
-    let youtuberNews = newsCache.filter(article => article.category === 'youtubers');
-    
-    if (youtuberNews.length === 0) {
-      bot.sendMessage(chatId, '🔄 Fetching fresh content...');
+    try {
+      // ALWAYS run fresh enhanced search, ignore cache
+      console.log('🎥 FORCING fresh YouTuber enhanced search...');
       const freshNews = await fetchEnhancedContent('youtubers');
-      youtuberNews = freshNews.length > 0 ? freshNews : createFallbackContent('youtubers');
-      newsCache.push(...youtuberNews);
-    }
-    
-    const message = formatNewsMessage(youtuberNews, 'YouTuber');
-    
-    if (message.length > 4000) {
-      const articles = youtuberNews;
-      const chunkSize = 10;
       
-      for (let i = 0; i < articles.length; i += chunkSize) {
-        const chunk = articles.slice(i, i + chunkSize);
-        const chunkMessage = formatNewsMessage(chunk, `YouTuber (${i + 1}-${Math.min(i + chunkSize, articles.length)})`);
+      if (freshNews.length > 0) {
+        console.log(`✅ Fresh enhanced search found ${freshNews.length} articles`);
         
-        await bot.sendMessage(chatId, chunkMessage, { 
+        // Update cache with fresh data
+        newsCache = newsCache.filter(article => article.category !== 'youtubers');
+        newsCache.push(...freshNews);
+        
+        const message = formatNewsMessage(freshNews, 'YouTuber');
+        
+        if (message.length > 4000) {
+          const chunkSize = 8;
+          
+          for (let i = 0; i < freshNews.length; i += chunkSize) {
+            const chunk = freshNews.slice(i, i + chunkSize);
+            const chunkMessage = formatNewsMessage(chunk, `YouTuber (${i + 1}-${Math.min(i + chunkSize, freshNews.length)} of ${freshNews.length})`);
+            
+            await bot.sendMessage(chatId, chunkMessage, { 
+              parse_mode: 'Markdown',
+              disable_web_page_preview: true 
+            });
+            
+            if (i + chunkSize < freshNews.length) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+        } else {
+          bot.sendMessage(chatId, message, { 
+            parse_mode: 'Markdown',
+            disable_web_page_preview: true 
+          });
+        }
+      } else {
+        console.log('⚠️ Enhanced search returned 0 results, using fallback');
+        const fallbackContent = createFallbackContent('youtubers');
+        const message = formatNewsMessage(fallbackContent, 'YouTuber');
+        bot.sendMessage(chatId, message, { 
           parse_mode: 'Markdown',
           disable_web_page_preview: true 
         });
-        
-        if (i + chunkSize < articles.length) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
       }
-    } else {
-      bot.sendMessage(chatId, message, { 
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true 
-      });
+    } catch (error) {
+      console.error('❌ YouTuber command error:', error);
+      bot.sendMessage(chatId, `❌ *Error fetching YouTuber news*\n\nTry /addkeyword youtubers <name> to add specific creators`, { parse_mode: 'Markdown' });
     }
   });
 
-  // BOLLYWOOD command
+  // BOLLYWOOD command - Force fresh search
   bot.onText(/\/bollywood/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🎭 *Getting ALL Bollywood news...*`);
+    bot.sendMessage(chatId, `🎭 *Getting ALL Bollywood news...*\n\n🔍 Running fresh enhanced search...`);
     
-    let bollywoodNews = newsCache.filter(article => article.category === 'bollywood');
-    
-    if (bollywoodNews.length === 0) {
+    try {
       const freshNews = await fetchEnhancedContent('bollywood');
-      bollywoodNews = freshNews.length > 0 ? freshNews : createFallbackContent('bollywood');
+      const bollywoodNews = freshNews.length > 0 ? freshNews : createFallbackContent('bollywood');
+      
+      // Update cache
+      newsCache = newsCache.filter(article => article.category !== 'bollywood');
+      newsCache.push(...bollywoodNews);
+      
+      const message = formatNewsMessage(bollywoodNews, 'Bollywood');
+      bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
+    } catch (error) {
+      console.error('❌ Bollywood command error:', error);
+      bot.sendMessage(chatId, `❌ *Error fetching Bollywood news*`, { parse_mode: 'Markdown' });
     }
-    
-    const message = formatNewsMessage(bollywoodNews, 'Bollywood');
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
   });
 
-  // CRICKET command
+  // CRICKET command - Force fresh search
   bot.onText(/\/cricket/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🏏 *Getting ALL Cricket news...*`);
+    bot.sendMessage(chatId, `🏏 *Getting ALL Cricket news...*\n\n🔍 Running fresh enhanced search...`);
     
-    let cricketNews = newsCache.filter(article => article.category === 'cricket');
-    
-    if (cricketNews.length === 0) {
+    try {
       const freshNews = await fetchEnhancedContent('cricket');
-      cricketNews = freshNews.length > 0 ? freshNews : createFallbackContent('cricket');
+      const cricketNews = freshNews.length > 0 ? freshNews : createFallbackContent('cricket');
+      
+      // Update cache
+      newsCache = newsCache.filter(article => article.category !== 'cricket');
+      newsCache.push(...cricketNews);
+      
+      const message = formatNewsMessage(cricketNews, 'Cricket');
+      bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
+    } catch (error) {
+      console.error('❌ Cricket command error:', error);
+      bot.sendMessage(chatId, `❌ *Error fetching Cricket news*`, { parse_mode: 'Markdown' });
     }
-    
-    const message = formatNewsMessage(cricketNews, 'Cricket');
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
   });
 
-  // NATIONAL command
+  // NATIONAL command - Force fresh search
   bot.onText(/\/national/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🇮🇳 *Getting ALL National news...*`);
+    bot.sendMessage(chatId, `🇮🇳 *Getting ALL National news...*\n\n🔍 Running fresh enhanced search...`);
     
-    let nationalNews = newsCache.filter(article => article.category === 'national');
-    
-    if (nationalNews.length === 0) {
+    try {
       const freshNews = await fetchEnhancedContent('national');
-      nationalNews = freshNews.length > 0 ? freshNews : createFallbackContent('national');
+      const nationalNews = freshNews.length > 0 ? freshNews : createFallbackContent('national');
+      
+      // Update cache
+      newsCache = newsCache.filter(article => article.category !== 'national');
+      newsCache.push(...nationalNews);
+      
+      const message = formatNewsMessage(nationalNews, 'National');
+      bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
+    } catch (error) {
+      console.error('❌ National command error:', error);
+      bot.sendMessage(chatId, `❌ *Error fetching National news*`, { parse_mode: 'Markdown' });
     }
-    
-    const message = formatNewsMessage(nationalNews, 'National');
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
   });
 
-  // PAKISTAN command
+  // PAKISTAN command - Force fresh search
   bot.onText(/\/pakistan/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🇵🇰 *Getting ALL Pakistan news...*`);
+    bot.sendMessage(chatId, `🇵🇰 *Getting ALL Pakistan news...*\n\n🔍 Running fresh enhanced search...`);
     
-    let pakistanNews = newsCache.filter(article => article.category === 'pakistan');
-    
-    if (pakistanNews.length === 0) {
+    try {
       const freshNews = await fetchEnhancedContent('pakistan');
-      pakistanNews = freshNews.length > 0 ? freshNews : createFallbackContent('pakistan');
+      const pakistanNews = freshNews.length > 0 ? freshNews : createFallbackContent('pakistan');
+      
+      // Update cache
+      newsCache = newsCache.filter(article => article.category !== 'pakistan');
+      newsCache.push(...pakistanNews);
+      
+      const message = formatNewsMessage(pakistanNews, 'Pakistani');
+      bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
+    } catch (error) {
+      console.error('❌ Pakistan command error:', error);
+      bot.sendMessage(chatId, `❌ *Error fetching Pakistan news*`, { parse_mode: 'Markdown' });
     }
-    
-    const message = formatNewsMessage(pakistanNews, 'Pakistani');
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
   });
 
   // LATEST command
