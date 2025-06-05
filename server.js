@@ -7,13 +7,22 @@ const winston = require('winston');
 const sqlite3 = require('sqlite3').verbose();
 const Filter = require('bad-words');
 
-// Enhanced configuration
+// Enhanced configuration with FIXED URL detection
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const isProduction = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT || 3000;
-const APP_URL = process.env.RENDER_EXTERNAL_URL || 
-                process.env.HEROKU_APP_NAME ? `https://${process.env.HEROKU_APP_NAME}.herokuapp.com` : 
-                `http://localhost:${PORT}`;
+
+// Fixed URL detection for Render.com
+let APP_URL;
+if (process.env.RENDER_EXTERNAL_URL) {
+  APP_URL = process.env.RENDER_EXTERNAL_URL;
+} else if (process.env.RENDER_SERVICE_NAME) {
+  APP_URL = `https://${process.env.RENDER_SERVICE_NAME}.onrender.com`;
+} else if (process.env.HEROKU_APP_NAME) {
+  APP_URL = `https://${process.env.HEROKU_APP_NAME}.herokuapp.com`;
+} else {
+  APP_URL = `http://localhost:${PORT}`;
+}
 
 // Initialize content filter
 const filter = new Filter();
