@@ -120,7 +120,7 @@ function isWithin24Hours(dateString) {
     const now = getCurrentIndianTime();
     if (isNaN(newsDate.getTime())) return true; // If invalid date, consider it recent
     const diffInHours = (now - newsDate) / (1000 * 60 * 60);
-    return diffInHours <= 48; // Extended to 48 hours for more content
+    return diffInHours <= 24; // Strict 24 hours only
   } catch (error) {
     return true; // If error, consider it recent
   }
@@ -221,27 +221,145 @@ function extractWorkingURL(googleNewsLink, title) {
   }
 }
 
-// IMPROVED: Enhanced Google News scraping with reliable sources
-async function scrapeGoogleNews(query) {
+// RELIABLE: Multiple news sources with direct RSS feeds
+async function scrapeReliableNews(query) {
   try {
-    const encodedQuery = encodeURIComponent(query);
-    // Use multiple RSS feeds for better coverage
-    const feeds = [
-      `https://news.google.com/rss/search?q=${encodedQuery}&hl=en-IN&gl=IN&ceid=IN:en&when:1d`,
-      `https://news.google.com/rss/search?q=${encodedQuery}+news&hl=en-IN&gl=IN&ceid=IN:en&when:2d`
-    ];
+    console.log(`📰 Fetching from multiple reliable sources for: ${query}`);
     
     const allArticles = [];
     
-    for (const url of feeds) {
-      try {
-        console.log(`📰 Fetching from: ${url.includes('when:1d') ? '1 day' : '2 day'} feed`);
+    // 1. Google News RSS (primary)
+    try {
+      const googleResults = await scrapeGoogleNewsRSS(query);
+      allArticles.push(...googleResults);
+      console.log(`✅ Google News: ${googleResults.length} articles`);
+    } catch (error) {
+      console.error(`❌ Google News error: ${error.message}`);
+    }
+    
+    // 2. Times of India RSS
+    try {
+      const toiResults = await scrapeTimesOfIndiaRSS(query);
+      allArticles.push(...toiResults);
+      console.log(`✅ Times of India: ${toiResults.length} articles`);
+    } catch (error) {
+      console.error(`❌ TOI error: ${error.message}`);
+    }
+    
+    // 3. NDTV RSS
+    try {
+      const ndtvResults = await scrapeNDTVRSS(query);
+      allArticles.push(...ndtvResults);
+      console.log(`✅ NDTV: ${ndtvResults.length} articles`);
+    } catch (error) {
+      console.error(`❌ NDTV error: ${error.message}`);
+    }
+    
+    // 4. Hindustan Times RSS
+    try {
+      const htResults = await scrapeHindustanTimesRSS(query);
+      allArticles.push(...htResults);
+      console.log(`✅ Hindustan Times: ${htResults.length} articles`);
+    } catch (error) {
+      console.error(`❌ HT error: ${error.message}`);
+    }
+    
+    // Remove duplicates and sort by reliability
+    const uniqueArticles = allArticles.filter((article, index, self) => {
+      const titleKey = article.title.toLowerCase().substring(0, 40);
+      return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
+    }).sort((a, b) => b.reliability - a.reliability);
+
+    console.log(`📰 Total reliable articles: ${uniqueArticles.length}`);
+    return uniqueArticles;
+    
+  } catch (error) {
+    console.error(`❌ Reliable news error: ${error.message}`);
+    return [];
+  }
+}
+
+// Google News RSS (improved)
+async function scrapeGoogleNewsRSS(query) {
+  try {
+    const encodedQuery = encodeURIComponent(query);
+    const url = `https://news.google.com/rss/search?q=${encodedQuery}&hl=en-IN&gl=IN&ceid=IN:en&when:1d`;
+    
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      timeout: 10000
+    });
+
+    const $ = cheerio.load(response.data, { xmlMode: true });
+    const articles = [];
+
+    $('item').each((i, elem) => {
+      const title = $(elem).find('title').text().trim();
+      const link = $(elem).find('link').text().trim();
+      const pubDate = $(elem).find('pubDate').text().trim();
+      const description = $(elem).find('description').text().trim();
+
+      if (title && link && title.length > 10) {
+        const currentTime = getCurrentTimestamp();
         
-        const response = await axios.get(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-          },
-          timeout: 15000
+        // Better link extraction
+        let workingLink = link;
+        if (link.includes('url=')) {
+          const urlMatch = link.match(/url=([^&]+)/);
+          if (urlMatch) {
+            workingLink = decodeURIComponent(urlMatch[1]);
+          }
+        }
+        
+        // If still Google link, create news search
+        if (workingLink.includes('google.com')) {
+          const cleanTitle = title.replace(/[^\w\s]/g, '').replace(/\s+/g, '+');
+          workingLink = `https://www.google.com/search?q=${cleanTitle}&tbm=nws&tbs=qdr:d`;
+        }
+        
+        articles.push({
+          title: title.length > 150 ? title.substring(0, 150) + '...' : title,
+          link: workingLink,
+          pubDate: pubDate || currentTime,
+          formattedDate: formatNewsDate(pubDate || currentTime),
+          description: description ? description.substring(0, 120) + '...' : `News about ${query}`,
+          source: extractSourceFromTitle(title) || 'Google News',
+          category: categorizeNews(title, description),
+          timestamp: currentTime,
+          fetchTime: getCurrentIndianTime().toLocaleString('en-IN'),
+          reliability: assessReliability(title, workingLink),
+          isVerified: true
+        });
+      }
+    });
+
+    return articles;
+  } catch (error) {
+    console.error(`Google News RSS error: ${error.message}`);
+    return [];
+  }
+}
+
+// Times of India RSS
+async function scrapeTimesOfIndiaRSS(query) {
+  try {
+    console.log(`📰 Fetching TOI RSS...`);
+    
+    // TOI main RSS feeds
+    const toiFeeds = [
+      'https://timesofindia.indiatimes.com/rssfeedstopstories.cms',
+      'https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms'
+    ];
+    
+    const articles = [];
+    
+    for (const feedUrl of toiFeeds) {
+      try {
+        const response = await axios.get(feedUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          timeout: 8000
         });
 
         const $ = cheerio.load(response.data, { xmlMode: true });
@@ -252,82 +370,166 @@ async function scrapeGoogleNews(query) {
           const pubDate = $(elem).find('pubDate').text().trim();
           const description = $(elem).find('description').text().trim();
 
-          if (title && link && title.length > 10) {
+          if (title && link && title.toLowerCase().includes(query.toLowerCase().split(' ')[0])) {
             const currentTime = getCurrentTimestamp();
-            const category = categorizeNews(title, description);
             
-            // Better link extraction
-            const workingLink = extractWorkingURL(link, title);
-            
-            const article = {
+            articles.push({
               title: title.length > 150 ? title.substring(0, 150) + '...' : title,
-              link: workingLink,
-              originalGoogleLink: link,
+              link: link,
               pubDate: pubDate || currentTime,
               formattedDate: formatNewsDate(pubDate || currentTime),
-              description: description ? description.substring(0, 120) + '...' : `Latest news about ${query}`,
-              source: extractSourceFromTitle(title) || 'News Source',
-              category: category,
-              query: query,
+              description: description ? description.substring(0, 120) + '...' : `Times of India news about ${query}`,
+              source: 'Times of India',
+              category: categorizeNews(title, description),
               timestamp: currentTime,
               fetchTime: getCurrentIndianTime().toLocaleString('en-IN'),
-              isVerified: true,
-              reliability: assessReliability(title, workingLink)
-            };
-            
-            allArticles.push(article);
+              reliability: 8, // High reliability for TOI
+              isVerified: true
+            });
           }
         });
-        
-        console.log(`✅ Feed ${url.includes('when:1d') ? '1' : '2'}: ${allArticles.length} articles`);
-        
       } catch (feedError) {
-        console.error(`❌ Feed error: ${feedError.message}`);
+        console.error(`TOI feed error: ${feedError.message}`);
       }
     }
-
-    // Remove duplicates and sort by reliability
-    const uniqueArticles = allArticles.filter((article, index, self) => {
-      const titleKey = article.title.toLowerCase().substring(0, 40);
-      return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
-    }).sort((a, b) => b.reliability - a.reliability);
-
-    console.log(`📰 "${query}": ${uniqueArticles.length} reliable articles found`);
-    return uniqueArticles;
+    
+    return articles.slice(0, 5); // Limit to 5 articles
   } catch (error) {
-    console.error(`❌ Error for "${query}":`, error.message);
+    console.error(`TOI RSS error: ${error.message}`);
     return [];
   }
 }
 
-// IMPROVED: Direct Twitter/X search with better working links
+// NDTV RSS
+async function scrapeNDTVRSS(query) {
+  try {
+    console.log(`📰 Fetching NDTV RSS...`);
+    
+    const ndtvFeeds = [
+      'https://feeds.feedburner.com/NDTV-LatestNews',
+      'https://feeds.feedburner.com/ndtvnews-top-stories'
+    ];
+    
+    const articles = [];
+    
+    for (const feedUrl of ndtvFeeds) {
+      try {
+        const response = await axios.get(feedUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          timeout: 8000
+        });
+
+        const $ = cheerio.load(response.data, { xmlMode: true });
+        
+        $('item').each((i, elem) => {
+          const title = $(elem).find('title').text().trim();
+          const link = $(elem).find('link').text().trim();
+          const pubDate = $(elem).find('pubDate').text().trim();
+          const description = $(elem).find('description').text().trim();
+
+          if (title && link && title.toLowerCase().includes(query.toLowerCase().split(' ')[0])) {
+            const currentTime = getCurrentTimestamp();
+            
+            articles.push({
+              title: title.length > 150 ? title.substring(0, 150) + '...' : title,
+              link: link,
+              pubDate: pubDate || currentTime,
+              formattedDate: formatNewsDate(pubDate || currentTime),
+              description: description ? description.substring(0, 120) + '...' : `NDTV news about ${query}`,
+              source: 'NDTV',
+              category: categorizeNews(title, description),
+              timestamp: currentTime,
+              fetchTime: getCurrentIndianTime().toLocaleString('en-IN'),
+              reliability: 9, // Very high reliability for NDTV
+              isVerified: true
+            });
+          }
+        });
+      } catch (feedError) {
+        console.error(`NDTV feed error: ${feedError.message}`);
+      }
+    }
+    
+    return articles.slice(0, 5);
+  } catch (error) {
+    console.error(`NDTV RSS error: ${error.message}`);
+    return [];
+  }
+}
+
+// Hindustan Times RSS
+async function scrapeHindustanTimesRSS(query) {
+  try {
+    console.log(`📰 Fetching HT RSS...`);
+    
+    const htFeeds = [
+      'https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml',
+      'https://www.hindustantimes.com/feeds/rss/latest-news/rssfeed.xml'
+    ];
+    
+    const articles = [];
+    
+    for (const feedUrl of htFeeds) {
+      try {
+        const response = await axios.get(feedUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          timeout: 8000
+        });
+
+        const $ = cheerio.load(response.data, { xmlMode: true });
+        
+        $('item').each((i, elem) => {
+          const title = $(elem).find('title').text().trim();
+          const link = $(elem).find('link').text().trim();
+          const pubDate = $(elem).find('pubDate').text().trim();
+          const description = $(elem).find('description').text().trim();
+
+          if (title && link && title.toLowerCase().includes(query.toLowerCase().split(' ')[0])) {
+            const currentTime = getCurrentTimestamp();
+            
+            articles.push({
+              title: title.length > 150 ? title.substring(0, 150) + '...' : title,
+              link: link,
+              pubDate: pubDate || currentTime,
+              formattedDate: formatNewsDate(pubDate || currentTime),
+              description: description ? description.substring(0, 120) + '...' : `Hindustan Times news about ${query}`,
+              source: 'Hindustan Times',
+              category: categorizeNews(title, description),
+              timestamp: currentTime,
+              fetchTime: getCurrentIndianTime().toLocaleString('en-IN'),
+              reliability: 8, // High reliability for HT
+              isVerified: true
+            });
+          }
+        });
+      } catch (feedError) {
+        console.error(`HT feed error: ${feedError.message}`);
+      }
+    }
+    
+    return articles.slice(0, 5);
+  } catch (error) {
+    console.error(`HT RSS error: ${error.message}`);
+    return [];
+  }
+}
+
+// REAL: Better Twitter search with actual relevant results
 async function searchTwitterDirect(searchTerm) {
   try {
-    console.log(`🐦 Creating direct Twitter links for: ${searchTerm}`);
+    console.log(`🐦 Creating focused Twitter search for: ${searchTerm}`);
     
     const currentTime = getCurrentTimestamp();
     const indianTime = getCurrentIndianTime().toLocaleString('en-IN');
     
+    // Create more specific Twitter searches that are more likely to have actual content
     const twitterResults = [
       {
         title: `${searchTerm} - Latest Twitter Posts`,
-        link: `https://twitter.com/search?q=${encodeURIComponent(searchTerm)}&src=typed_query&f=live`,
+        link: `https://twitter.com/search?q=${encodeURIComponent(searchTerm + ' -filter:replies')}&src=typed_query&f=live`,
         pubDate: currentTime,
         formattedDate: 'Live updates',
-        description: `Latest tweets and discussions about ${searchTerm}`,
-        source: 'Twitter/X',
-        category: categorizeNews(searchTerm),
-        platform: 'twitter',
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        isVerified: true
-      },
-      {
-        title: `#${searchTerm.replace(/\s+/g, '')} Trending`,
-        link: `https://twitter.com/hashtag/${encodeURIComponent(searchTerm.replace(/\s+/g, ''))}`,
-        pubDate: currentTime,
-        formattedDate: 'Trending now',
-        description: `Trending hashtag content for ${searchTerm}`,
+        description: `Latest tweets about ${searchTerm} (excluding replies)`,
         source: 'Twitter/X',
         category: categorizeNews(searchTerm),
         platform: 'twitter',
@@ -337,7 +539,24 @@ async function searchTwitterDirect(searchTerm) {
       }
     ];
     
-    console.log(`✅ Twitter: Created ${twitterResults.length} working direct links`);
+    // Only add hashtag search if the term is likely to be a hashtag
+    if (searchTerm.length < 30 && !searchTerm.includes(' ')) {
+      twitterResults.push({
+        title: `#${searchTerm} - Trending Tweets`,
+        link: `https://twitter.com/hashtag/${encodeURIComponent(searchTerm)}?src=hashtag_click&f=live`,
+        pubDate: currentTime,
+        formattedDate: 'Trending now',
+        description: `Trending hashtag content for ${searchTerm}`,
+        source: 'Twitter/X',
+        category: categorizeNews(searchTerm),
+        platform: 'twitter',
+        timestamp: currentTime,
+        fetchTime: indianTime,
+        isVerified: true
+      });
+    }
+    
+    console.log(`✅ Twitter: Created ${twitterResults.length} focused search links`);
     return twitterResults;
   } catch (error) {
     console.error('Twitter search error:', error.message);
@@ -415,64 +634,46 @@ async function searchYouTubeDirect(searchTerm) {
   }
 }
 
-// IMPROVED: Direct Instagram search with working links
+// REAL: Direct Instagram search for actual posts (not just search page)
 async function searchInstagramDirect(searchTerm) {
   try {
-    console.log(`📸 Creating direct Instagram links for: ${searchTerm}`);
+    console.log(`📸 Creating direct Instagram post links for: ${searchTerm}`);
     
     const currentTime = getCurrentTimestamp();
     const indianTime = getCurrentIndianTime().toLocaleString('en-IN');
     
-    const instaResults = [
-      {
-        title: `${searchTerm} - Instagram Posts`,
-        link: `https://www.instagram.com/explore/tags/${encodeURIComponent(searchTerm.replace(/\s+/g, ''))}/`,
-        pubDate: currentTime,
-        formattedDate: 'Latest posts',
-        description: `Recent Instagram content about ${searchTerm}`,
-        source: 'Instagram',
-        category: categorizeNews(searchTerm),
-        platform: 'instagram',
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        isVerified: true
-      }
-    ];
+    // Instead of creating fake Instagram results, let's not include Instagram
+    // unless we have actual post URLs, because Instagram search doesn't work properly
+    console.log(`⚠️ Instagram search disabled - no reliable way to get actual posts`);
+    return []; // Return empty array instead of fake search links
     
-    console.log(`✅ Instagram: Created ${instaResults.length} working direct links`);
-    return instaResults;
   } catch (error) {
     console.error('Instagram search error:', error.message);
     return [];
   }
 }
 
-// IMPROVED: Multi-platform search with working direct links
+// FOCUS: Multiple reliable news sources
 async function searchMultiplePlatforms(searchTerm) {
   const allResults = [];
   
   try {
-    console.log(`🔍 Multi-platform search for: ${searchTerm}`);
+    console.log(`🔍 Multi-source search for: ${searchTerm}`);
     
-    // 1. Google News (with better URL extraction)
-    const newsResults = await scrapeGoogleNews(searchTerm);
+    // 1. Multiple reliable news sources (main focus)
+    const newsResults = await scrapeReliableNews(searchTerm);
     allResults.push(...newsResults);
-    console.log(`✅ Google News: ${newsResults.length} results`);
+    console.log(`✅ Reliable News Sources: ${newsResults.length} results`);
     
-    // 2. Direct Twitter search
+    // 2. Twitter search (works well)
     const twitterResults = await searchTwitterDirect(searchTerm);
     allResults.push(...twitterResults);
-    console.log(`✅ Twitter Direct: ${twitterResults.length} results`);
+    console.log(`✅ Twitter: ${twitterResults.length} results`);
     
-    // 3. Direct YouTube search
+    // 3. YouTube search (reliable social platform)
     const youtubeResults = await searchYouTubeDirect(searchTerm);
     allResults.push(...youtubeResults);
-    console.log(`✅ YouTube Direct: ${youtubeResults.length} results`);
-    
-    // 4. Direct Instagram search
-    const instaResults = await searchInstagramDirect(searchTerm);
-    allResults.push(...instaResults);
-    console.log(`✅ Instagram Direct: ${instaResults.length} results`);
+    console.log(`✅ YouTube: ${youtubeResults.length} results`);
 
     // Remove duplicates
     const uniqueResults = allResults.filter((article, index, self) => {
@@ -480,11 +681,11 @@ async function searchMultiplePlatforms(searchTerm) {
       return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
     });
 
-    console.log(`✅ Multi-platform search complete: ${uniqueResults.length} total working results`);
+    console.log(`✅ Multi-source search complete: ${uniqueResults.length} reliable results`);
     return uniqueResults;
 
   } catch (error) {
-    console.error(`❌ Multi-platform search error:`, error.message);
+    console.error(`❌ Multi-source search error:`, error.message);
     return [];
   }
 }
@@ -558,7 +759,7 @@ async function fetchEnhancedContent(category) {
     for (const term of terms.slice(0, 3)) {
       try {
         console.log(`   → Enhanced search: ${term}`);
-        const articles = await scrapeGoogleNews(term);
+        const articles = await scrapeReliableNews(term);
         
         const categoryArticles = articles.filter(article => 
           article.category === category || categorizeNews(article.title, article.description) === category
@@ -581,7 +782,7 @@ async function fetchEnhancedContent(category) {
       const keyword = keywords[i];
       try {
         console.log(`   → Backup ${i+1}/${Math.min(keywords.length, 4)}: ${keyword}`);
-        const articles = await scrapeGoogleNews(keyword + ' latest news');
+        const articles = await scrapeReliableNews(keyword + ' latest news');
         
         const categoryArticles = articles.filter(article => 
           article.category === category || categorizeNews(article.title, article.description) === category
@@ -766,7 +967,7 @@ async function formatAndSendNewsMessage(chatId, articles, category, bot) {
     
     // Send summary first
     const currentIndianTime = getCurrentIndianTime();
-    const summaryMessage = `🔥 *${category.toUpperCase()} LATEST NEWS*\n\n📊 *Found: ${articles.length} articles*\n⏰ *Data: Last 48 Hours*\n🌐 *All links: WORKING & DIRECT*\n🕐 *Updated: ${currentIndianTime.toLocaleString('en-IN')}*\n\n⬇️ *Sending in parts...*`;
+    const summaryMessage = `🔥 *${category.toUpperCase()} LATEST NEWS*\n\n📊 *Found: ${articles.length} articles*\n⏰ *Data: Last 24 Hours*\n🌐 *All links: WORKING & DIRECT*\n🕐 *Updated: ${currentIndianTime.toLocaleString('en-IN')}*\n\n⬇️ *Sending in parts...*`;
     
     await bot.sendMessage(chatId, summaryMessage, { parse_mode: 'Markdown' });
     
@@ -958,7 +1159,7 @@ if (bot) {
   // YOUTUBERS command
   bot.onText(/\/youtubers/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🎥 *Getting LATEST YouTuber news...*\n\n🔍 Searching last 48 hours across all platforms\n⏳ Please wait 30-60 seconds...`);
+    bot.sendMessage(chatId, `🎥 *Getting LATEST YouTuber news...*\n\n🔍 Searching last 24 hours across all platforms\n⏳ Please wait 30-60 seconds...`);
     
     try {
       console.log('🎥 FORCING fresh YouTuber search with timestamps...');
@@ -986,7 +1187,7 @@ if (bot) {
   // BOLLYWOOD command
   bot.onText(/\/bollywood/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🎭 *Getting LATEST Bollywood news...*\n\n🔍 Searching last 48 hours...`);
+    bot.sendMessage(chatId, `🎭 *Getting LATEST Bollywood news...*\n\n🔍 Searching last 24 hours...`);
     
     try {
       const freshNews = await fetchEnhancedContent('bollywood');
@@ -1005,7 +1206,7 @@ if (bot) {
   // CRICKET command
   bot.onText(/\/cricket/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🏏 *Getting LATEST Cricket news...*\n\n🔍 Searching last 48 hours...`);
+    bot.sendMessage(chatId, `🏏 *Getting LATEST Cricket news...*\n\n🔍 Searching last 24 hours...`);
     
     try {
       const freshNews = await fetchEnhancedContent('cricket');
@@ -1232,7 +1433,7 @@ if (bot) {
   bot.onText(/\/refresh/, async (msg) => {
     const chatId = msg.chat.id;
     const currentTime = getCurrentIndianTime();
-    bot.sendMessage(chatId, `🔄 *Refreshing ALL sources...*\n\n⏳ Getting latest data from last 48 hours\n🕐 Started: ${currentTime.toLocaleString('en-IN')}`, { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, `🔄 *Refreshing ALL sources...*\n\n⏳ Getting latest data from last 24 hours\n🕐 Started: ${currentTime.toLocaleString('en-IN')}`, { parse_mode: 'Markdown' });
     
     const startTime = new Date();
     newsCache = [];
@@ -1247,7 +1448,7 @@ if (bot) {
 📊 *Articles found:* ${news.length}
 🕐 *Completed:* ${getCurrentIndianTime().toLocaleString('en-IN')}
 ✅ *All links are WORKING & DIRECT!*
-📱 *Data from last 48 hours with timestamps*`, { parse_mode: 'Markdown' });
+📱 *Data from last 24 hours with timestamps*`, { parse_mode: 'Markdown' });
   });
 
   console.log('📱 Telegram Bot v2.0 initialized with WORKING LINKS & TIMESTAMPS!');
