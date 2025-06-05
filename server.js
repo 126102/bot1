@@ -152,30 +152,72 @@ function categorizeNews(title, description = '') {
 // IMPROVED: Better URL extraction for working links
 function extractWorkingURL(googleNewsLink, title) {
   try {
-    // Method 1: Extract from URL parameter
+    console.log(`🔗 Extracting URL from: ${googleNewsLink.substring(0, 100)}...`);
+    
+    // Method 1: Extract from URL parameter (multiple attempts)
     if (googleNewsLink.includes('url=')) {
       const urlMatch = googleNewsLink.match(/url=([^&]+)/);
       if (urlMatch) {
-        const decodedUrl = decodeURIComponent(urlMatch[1]);
+        let decodedUrl = decodeURIComponent(urlMatch[1]);
+        
+        // Sometimes URLs are double encoded
+        try {
+          if (decodedUrl.includes('%')) {
+            decodedUrl = decodeURIComponent(decodedUrl);
+          }
+        } catch (e) {
+          // If decoding fails, use original
+        }
+        
         if (decodedUrl.startsWith('http') && !decodedUrl.includes('google.com')) {
+          console.log(`✅ Extracted working URL: ${decodedUrl.substring(0, 50)}...`);
           return decodedUrl;
         }
       }
     }
     
-    // Method 2: If it's already a direct link, return as is
+    // Method 2: Try to extract from Google News article ID
+    if (googleNewsLink.includes('/articles/') && googleNewsLink.includes('google.com')) {
+      // Try to resolve Google News redirects
+      const articleMatch = googleNewsLink.match(/articles\/([^?]+)/);
+      if (articleMatch) {
+        // Create a direct Google search for the article
+        const cleanTitle = title.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+        const workingUrl = `https://www.google.com/search?q="${encodeURIComponent(cleanTitle)}"&btnI=I%27m+Feeling+Lucky`;
+        console.log(`🔄 Using Google "I'm Feeling Lucky" for: ${cleanTitle.substring(0, 30)}...`);
+        return workingUrl;
+      }
+    }
+    
+    // Method 3: If it's already a direct link, return as is
     if (!googleNewsLink.includes('news.google.com') && googleNewsLink.startsWith('http')) {
+      console.log(`✅ Direct link found: ${googleNewsLink.substring(0, 50)}...`);
       return googleNewsLink;
     }
     
-    // Method 3: Create search-based fallback that actually works
-    const cleanTitle = title.replace(/[^\w\s]/g, '').trim();
-    return `https://www.google.com/search?q=${encodeURIComponent(cleanTitle)}&tbm=nws&tbs=qdr:d`;
+    // Method 4: Create better search fallback
+    const cleanTitle = title.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+    
+    // Try different search strategies based on content
+    if (title.toLowerCase().includes('youtube') || title.toLowerCase().includes('youtuber')) {
+      const workingUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(cleanTitle)}`;
+      console.log(`📺 YouTube search fallback: ${cleanTitle.substring(0, 30)}...`);
+      return workingUrl;
+    } else if (title.toLowerCase().includes('twitter') || title.toLowerCase().includes('tweet')) {
+      const workingUrl = `https://twitter.com/search?q=${encodeURIComponent(cleanTitle)}`;
+      console.log(`🐦 Twitter search fallback: ${cleanTitle.substring(0, 30)}...`);
+      return workingUrl;
+    } else {
+      // General news search with exact phrase
+      const workingUrl = `https://www.google.com/search?q="${encodeURIComponent(cleanTitle)}"&tbm=nws&tbs=qdr:w`;
+      console.log(`📰 News search fallback: ${cleanTitle.substring(0, 30)}...`);
+      return workingUrl;
+    }
     
   } catch (error) {
     console.error('URL extraction error:', error.message);
-    const cleanTitle = title.replace(/[^\w\s]/g, '').trim();
-    return `https://www.google.com/search?q=${encodeURIComponent(cleanTitle)}&tbm=nws&tbs=qdr:d`;
+    const cleanTitle = title.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+    return `https://www.google.com/search?q="${encodeURIComponent(cleanTitle)}"&tbm=nws&tbs=qdr:w`;
   }
 }
 
@@ -716,8 +758,7 @@ async function createAndSendTextFile(chatId, articles, category, bot) {
     
     await bot.sendDocument(chatId, stream, {
       caption: `📄 *${category.toUpperCase()} LATEST NEWS*\n\n📊 *${articles.length} articles* found\n🔗 All WORKING links included\n⏰ ${currentIndianTime.toLocaleString('en-IN')}\n✅ Data from last 48 hours`,
-      parse_mode: 'Markdown'
-    }, {
+      parse_mode: 'Markdown',
       filename: fileName,
       contentType: 'text/plain'
     });
