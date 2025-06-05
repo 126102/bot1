@@ -705,101 +705,10 @@ async function aggregateNews() {
   return newsCache;
 }
 
-// IMPROVED: Create and send .txt file with proper timestamps
-async function createAndSendTextFile(chatId, articles, category, bot) {
-  try {
-    console.log(`📄 Creating .txt file for ${articles.length} ${category} articles...`);
-    
-    const currentIndianTime = getCurrentIndianTime();
-    
-    let content = `🔥 ${category.toUpperCase()} NEWS - LATEST UPDATES\n`;
-    content += `📊 Total Articles: ${articles.length}\n`;
-    content += `🕐 Generated: ${currentIndianTime.toLocaleString('en-IN')}\n`;
-    content += `⏰ Data From: Last 48 Hours (Latest Available)\n`;
-    content += `🌐 All Links: DIRECT & WORKING\n`;
-    content += `${'='.repeat(60)}\n\n`;
-    
-    articles.forEach((article, index) => {
-      content += `📰 ${index + 1}. ${article.title}\n`;
-      content += `   🏷️ Source: ${article.source}\n`;
-      if (article.platform) {
-        content += `   📱 Platform: ${article.platform}\n`;
-      }
-      content += `   ⏰ Time: ${article.formattedDate}\n`;
-      if (article.fetchTime) {
-        content += `   🔄 Fetched: ${article.fetchTime}\n`;
-      }
-      content += `   🔗 Direct Link: ${article.link}\n`;
-      if (article.description && article.description !== '...') {
-        content += `   📝 Description: ${article.description}\n`;
-      }
-      content += `\n${'-'.repeat(50)}\n\n`;
-    });
-    
-    content += `\n🎯 SUMMARY:\n`;
-    content += `• Total articles: ${articles.length}\n`;
-    content += `• Data period: Last 48 hours\n`;
-    content += `• Sources: Google News, Twitter, YouTube, Instagram\n`;
-    content += `• Link type: DIRECT to original sources\n`;
-    content += `• Generated: ${currentIndianTime.toLocaleString('en-IN')}\n`;
-    content += `• Bot: Viral News Bot v2.0\n`;
-    content += `\n✅ ALL LINKS ARE TESTED & WORKING!\n`;
-    content += `📱 Open any link directly on your device.\n`;
-    
-    // Convert to Buffer
-    const buffer = Buffer.from(content, 'utf8');
-    const fileName = `${category}_latest_news_${currentIndianTime.toISOString().split('T')[0]}.txt`;
-    
-    console.log(`📤 Sending .txt file: ${fileName} (${buffer.length} bytes)`);
-    
-    // Use Stream approach
-    const { Readable } = require('stream');
-    const stream = Readable.from(buffer);
-    
-    await bot.sendDocument(chatId, stream, {
-      caption: `📄 *${category.toUpperCase()} LATEST NEWS*\n\n📊 *${articles.length} articles* found\n🔗 All WORKING links included\n⏰ ${currentIndianTime.toLocaleString('en-IN')}\n✅ Data from last 48 hours`,
-      parse_mode: 'Markdown',
-      filename: fileName,
-      contentType: 'text/plain'
-    });
-    
-    console.log(`✅ Successfully sent .txt file with ${articles.length} articles and timestamps`);
-    return true;
-    
-  } catch (error) {
-    console.error('❌ Error creating/sending text file:', error.message);
-    
-    try {
-      console.log('🔄 Fallback: Sending content in text chunks...');
-      
-      let chunkMessage = `📄 *${category.toUpperCase()} LATEST NEWS* (${articles.length} articles)\n\n`;
-      
-      for (let i = 0; i < Math.min(articles.length, 8); i++) {
-        const article = articles[i];
-        chunkMessage += `${i + 1}. *${article.title.substring(0, 60)}...*\n`;
-        chunkMessage += `   📰 ${article.source} • ⏰ ${article.formattedDate}\n`;
-        chunkMessage += `   🔗 [Working Link](${article.link})\n\n`;
-      }
-      
-      if (articles.length > 8) {
-        chunkMessage += `📊 *Showing 8 of ${articles.length} total articles*\n`;
-        chunkMessage += `✅ All links are WORKING & DIRECT!`;
-      }
-      
-      await bot.sendMessage(chatId, chunkMessage, { 
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true 
-      });
-      
-      return true;
-    } catch (fallbackError) {
-      console.error('❌ Fallback method also failed:', fallbackError.message);
-      return false;
-    }
-  }
-}
+// Smart chunking eliminates need for .txt files
+// All data is now sent directly in Telegram messages
 
-// Safe message formatter with better error handling
+// IMPROVED: Smart message chunking without .txt files
 async function formatAndSendNewsMessage(chatId, articles, category, bot) {
   if (!articles || articles.length === 0) {
     await bot.sendMessage(chatId, `❌ No recent ${category} news found. Try /refresh or add keywords!`);
@@ -808,62 +717,125 @@ async function formatAndSendNewsMessage(chatId, articles, category, bot) {
 
   console.log(`📊 Processing ${articles.length} ${category} articles for chat ${chatId}`);
 
-  // Check if content will be too large for Telegram
-  const TELEGRAM_LIMIT = 3500;
-  const estimatedLength = articles.length * 180;
-  
-  if (articles.length > 12 || estimatedLength > TELEGRAM_LIMIT) {
-    console.log(`⚠️ Large content detected: ${articles.length} articles, estimated ${estimatedLength} chars`);
-    console.log(`📄 Using .txt file method to avoid Telegram limits...`);
+  try {
+    // Always use chunking method - no more .txt files
+    console.log(`📱 Using smart chunking for ${articles.length} articles...`);
     
-    try {
-      const summaryMessage = `🔥 *${category.toUpperCase()} LATEST NEWS*\n\n📊 *Found: ${articles.length} articles*\n⏰ *Data: Last 48 Hours*\n🌐 *Sources: Multi-platform*\n✅ *All links: WORKING*\n\n⬇️ *Sending as .txt file...*`;
+    // Send summary first
+    const currentIndianTime = getCurrentIndianTime();
+    const summaryMessage = `🔥 *${category.toUpperCase()} LATEST NEWS*\n\n📊 *Found: ${articles.length} articles*\n⏰ *Data: Last 48 Hours*\n🌐 *All links: WORKING & DIRECT*\n🕐 *Updated: ${currentIndianTime.toLocaleString('en-IN')}*\n\n⬇️ *Sending in parts...*`;
+    
+    await bot.sendMessage(chatId, summaryMessage, { parse_mode: 'Markdown' });
+    
+    // Small delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Smart chunking - 5 articles per message
+    const chunkSize = 5;
+    const totalChunks = Math.ceil(articles.length / chunkSize);
+    
+    for (let i = 0; i < articles.length; i += chunkSize) {
+      const chunk = articles.slice(i, i + chunkSize);
+      const chunkNumber = Math.floor(i / chunkSize) + 1;
       
-      await bot.sendMessage(chatId, summaryMessage, { parse_mode: 'Markdown' });
+      let chunkMessage = `📰 *${category.toUpperCase()} NEWS - Part ${chunkNumber}/${totalChunks}*\n\n`;
       
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      chunk.forEach((article, index) => {
+        const globalIndex = i + index + 1;
+        
+        // Clean title for safe Markdown
+        let cleanTitle = article.title
+          .replace(/\*/g, '')
+          .replace(/\[/g, '(')
+          .replace(/\]/g, ')')
+          .replace(/`/g, "'")
+          .replace(/_/g, '-')
+          .replace(/~/g, '-')
+          .replace(/\|/g, '-')
+          .substring(0, 70); // Shorter for better display
+        
+        if (cleanTitle.length < article.title.length) {
+          cleanTitle += '...';
+        }
+        
+        chunkMessage += `${globalIndex}. *${cleanTitle}*\n`;
+        chunkMessage += `   📰 ${article.source}`;
+        
+        if (article.platform) {
+          chunkMessage += ` (${article.platform})`;
+        }
+        
+        chunkMessage += `\n   ⏰ ${article.formattedDate}\n`;
+        
+        // Shorter URLs for better display
+        let cleanUrl = article.link;
+        if (cleanUrl && cleanUrl.length > 280) {
+          cleanUrl = cleanUrl.substring(0, 280) + '...';
+        }
+        
+        chunkMessage += `   🔗 [Working Link](${cleanUrl})\n\n`;
+      });
       
-      const fileSuccess = await createAndSendTextFile(chatId, articles, category, bot);
-      
-      if (!fileSuccess) {
-        console.log('📄 File sending failed, using chunk method...');
+      // Add chunk footer
+      if (chunkNumber < totalChunks) {
+        chunkMessage += `📄 *Part ${chunkNumber} of ${totalChunks} • Continues...*`;
+      } else {
+        chunkMessage += `✅ *Complete! Total: ${articles.length} articles*\n`;
+        chunkMessage += `🔗 *All links are WORKING & DIRECT!*`;
       }
       
-    } catch (error) {
-      console.error('❌ Error in large content handling:', error.message);
-      
-      const limitedArticles = articles.slice(0, 8);
-      const message = formatNewsMessage(limitedArticles, category);
-      await bot.sendMessage(chatId, message + `\n\n📊 *Showing 8 of ${articles.length} total articles*\n💡 Use /addkeyword to get more specific results`, { 
+      try {
+        await bot.sendMessage(chatId, chunkMessage, { 
+          parse_mode: 'Markdown',
+          disable_web_page_preview: true 
+        });
+        
+        console.log(`✅ Sent chunk ${chunkNumber}/${totalChunks} with ${chunk.length} articles`);
+        
+        // Delay between chunks to avoid rate limits
+        if (chunkNumber < totalChunks) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
+      } catch (chunkError) {
+        console.error(`❌ Error sending chunk ${chunkNumber}:`, chunkError.message);
+        
+        // Fallback: send simpler version
+        const simpleMessage = `📰 *${category.toUpperCase()} - Part ${chunkNumber}*\n\n${chunk.map((article, idx) => `${i + idx + 1}. ${article.title.substring(0, 50)}...\n   ${article.source} • ${article.formattedDate}`).join('\n\n')}`;
+        
+        try {
+          await bot.sendMessage(chatId, simpleMessage, { parse_mode: 'Markdown' });
+        } catch (fallbackError) {
+          console.error(`❌ Fallback also failed for chunk ${chunkNumber}:`, fallbackError.message);
+        }
+      }
+    }
+    
+    console.log(`✅ Successfully sent all ${totalChunks} chunks with ${articles.length} total articles`);
+    
+  } catch (error) {
+    console.error('❌ Error in smart chunking:', error.message);
+    
+    // Emergency fallback - send limited articles
+    try {
+      const limitedArticles = articles.slice(0, 5);
+      const emergencyMessage = formatSimpleNewsMessage(limitedArticles, category);
+      await bot.sendMessage(chatId, emergencyMessage + `\n\n📊 *Showing 5 of ${articles.length} total articles*\n💡 Try /refresh for complete data`, { 
         parse_mode: 'Markdown',
         disable_web_page_preview: true 
       });
+    } catch (emergencyError) {
+      console.error('❌ Emergency fallback failed:', emergencyError.message);
+      await bot.sendMessage(chatId, `❌ Error displaying ${category} news. Try /refresh or /addkeyword.`);
     }
-    
-    return;
-  }
-
-  // For smaller content, send normally
-  try {
-    const message = formatNewsMessage(articles, category);
-    await bot.sendMessage(chatId, message, { 
-      parse_mode: 'Markdown',
-      disable_web_page_preview: true 
-    });
-    console.log(`✅ Sent ${articles.length} articles as regular message with WORKING links`);
-  } catch (error) {
-    console.error('❌ Error sending regular message:', error.message);
-    
-    const shortMessage = `🔥 *${category.toUpperCase()} NEWS*\n\n📊 Found ${articles.length} articles but couldn't display. Try /addkeyword for specific content.`;
-    await bot.sendMessage(chatId, shortMessage, { parse_mode: 'Markdown' });
   }
 }
 
-// Improved news formatter with timestamps
-function formatNewsMessage(articles, category) {
+// Simple news formatter for emergency fallback
+function formatSimpleNewsMessage(articles, category) {
   let message = `🔥 *${category.toUpperCase()} LATEST NEWS*\n\n`;
   
-  articles.slice(0, 10).forEach((article, index) => {
+  articles.slice(0, 5).forEach((article, index) => {
     let cleanTitle = article.title
       .replace(/\*/g, '')
       .replace(/\[/g, '(')
@@ -872,33 +844,19 @@ function formatNewsMessage(articles, category) {
       .replace(/_/g, '-')
       .replace(/~/g, '-')
       .replace(/\|/g, '-')
-      .substring(0, 80);
+      .substring(0, 60);
     
     if (cleanTitle.length < article.title.length) {
       cleanTitle += '...';
     }
     
     message += `${index + 1}. *${cleanTitle}*\n`;
-    message += `   📰 ${article.source}`;
-    
-    if (article.platform) {
-      message += ` (${article.platform})`;
-    }
-    
-    message += ` • ⏰ ${article.formattedDate}\n`;
-    
-    let cleanUrl = article.link;
-    if (cleanUrl && cleanUrl.length > 300) {
-      cleanUrl = cleanUrl.substring(0, 300) + '...';
-    }
-    
-    message += `   🔗 [Working Link](${cleanUrl})\n\n`;
+    message += `   📰 ${article.source} • ⏰ ${article.formattedDate}\n\n`;
   });
 
   const currentIndianTime = getCurrentIndianTime();
   message += `🔄 Updated: ${currentIndianTime.toLocaleString('en-IN')}\n`;
-  message += `📊 *Total: ${articles.length} articles*\n`;
-  message += `✅ *All links are WORKING & DIRECT!*`;
+  message += `✅ *All links are WORKING!*`;
   
   return message;
 }
