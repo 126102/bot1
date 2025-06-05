@@ -1,580 +1,346 @@
-# 🔥 Enhanced Viral News Bot v3.0
+# 🚀 Deployment Guide - Enhanced Viral News Bot v3.0
 
-**Advanced Telegram News Bot with Content Scoring, Webhooks, Moderation & Analytics - Perfect for YouTube News Channels**
+Complete step-by-step guide to deploy your news bot on different platforms.
 
-## 🚀 Key Features
+## 📋 Pre-Deployment Checklist
 
-### ✅ **All Your Requested Features Implemented:**
-- **🌐 Webhooks** instead of polling (faster, efficient, saves bandwidth)
-- **🧪 Unit Tests** with Jest (comprehensive test coverage)
-- **🛡️ Content Moderation** (filters profanity, slurs, fake news)
-- **📊 Content Scoring System** (Spice, Conspiracy, Importance levels)
-- **⚡ Rate Limiting** (prevents abuse)
+### ✅ **Before You Deploy:**
+- [ ] Bot token obtained from @BotFather
+- [ ] Code tested locally with `npm test`
+- [ ] Environment variables configured
+- [ ] Database schema verified
+- [ ] All dependencies installed
+- [ ] Git repository created
 
-### 🎯 **Perfect for YouTube News Channels:**
-- **🌶️ Spicy Content Focus** - Drama, controversies, exposés
-- **🕵️ Conspiracy Content** - Hidden truths, secrets, cover-ups
-- **⚡ Breaking News** - Important, urgent, crisis content
-- **📱 Multi-Platform** - News, Twitter, Instagram, YouTube
-- **🔗 Working Links** - Direct, verified, non-broken URLs
-
-### 📊 **Advanced Scoring System:**
-- **Spice Score (1-10):** Drama, controversy, fights, scandals
-- **Conspiracy Score (1-10):** Secrets, exposés, hidden agendas
-- **Importance Score (1-10):** Breaking news, urgent updates
-- **Total Score:** Combined score for ranking content
-
-## 🛠️ **Installation & Setup**
-
-### **1. Prerequisites**
-```bash
-# Node.js 14+ required
-node --version
-
-# Create project directory
-mkdir enhanced-news-bot
-cd enhanced-news-bot
-```
-
-### **2. Install Dependencies**
-```bash
-# Install all dependencies
-npm install
-
-# Or install manually:
-npm install node-telegram-bot-api axios cheerio express express-rate-limit winston sqlite3 bad-words dotenv helmet cors compression
-
-# Dev dependencies
-npm install --save-dev jest supertest nodemon eslint @babel/preset-env babel-jest
-```
-
-### **3. Environment Setup**
-Create `.env` file:
-```env
-# Required
-BOT_TOKEN=your_telegram_bot_token_here
-NODE_ENV=production
-
-# Optional (for Render deployment)
-RENDER_EXTERNAL_URL=https://your-app.onrender.com
-RENDER_SERVICE_NAME=your-service-name
-PORT=3000
-
-# Database (optional - uses SQLite by default)
-DATABASE_URL=sqlite:./enhanced_news_bot.db
-
-# Logging
-LOG_LEVEL=info
-```
-
-### **4. Get Telegram Bot Token**
+### 📱 **Get Your Bot Token:**
 1. Message [@BotFather](https://t.me/BotFather) on Telegram
 2. Send `/newbot`
-3. Choose bot name and username
-4. Copy the token to `.env` file
+3. Choose bot name: `YourNewsBot`
+4. Choose username: `your_news_bot`
+5. Copy the token (format: `123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`)
+6. Save it securely - you'll need it for deployment
 
-### **5. Webhook Setup (Production)**
-The bot automatically sets up webhooks when `NODE_ENV=production`:
+---
 
-```javascript
-// Webhook URL format:
-https://your-domain.com/webhook/YOUR_BOT_TOKEN
-```
+## 🌟 **Option 1: Render.com (Recommended)**
 
-For **Render.com** deployment:
-1. Connect your GitHub repo
-2. Set environment variables
-3. Deploy - webhooks configure automatically
+**Why Render.com?**
+- ✅ **Free tier available**
+- ✅ **Automatic HTTPS/SSL**
+- ✅ **Zero-config deployment**
+- ✅ **Built-in environment variables**
+- ✅ **Automatic webhook setup**
 
-## 🔧 **Usage Commands**
-
-### **📰 Main News Commands:**
-```
-/youtubers - Spicy YouTuber drama & conspiracy
-/bollywood - Celebrity scandals & secrets  
-/cricket - Sports controversies & match fixing
-/national - Political drama & government exposés
-/pakistan - Pakistani conspiracy & crisis content
-/latest - Top-scored content from all categories
-```
-
-### **🔍 Advanced Search:**
-```
-/search <term> - Multi-platform scored search
-/spicy <term> - High controversy content only (6+ spice score)
-/conspiracy <term> - Conspiracy-focused search (5+ conspiracy score)
-```
-
-### **🛠️ Management:**
-```
-/addkeyword <category> <keyword> - Add custom keywords
-/listkeywords - Show all your keywords
-/mystats - Your usage statistics  
-/settings - Bot configuration info
-/refresh - Force refresh all sources (rate limited)
-```
-
-### **📊 Example Commands:**
-```
-/addkeyword youtubers CarryMinati controversy
-/addkeyword bollywood nepotism scandal
-/spicy Elvish Yadav drama
-/conspiracy Bollywood illuminati
-/search YouTube algorithm manipulation
-```
-
-## 🧪 **Testing**
-
-### **Run All Tests:**
+### **Step 1: Prepare Repository**
 ```bash
-# Run complete test suite
-npm test
+# Clone or fork the repository
+git clone https://github.com/your-username/enhanced-viral-news-bot.git
+cd enhanced-viral-news-bot
 
-# Run with coverage report
-npm run test:coverage
-
-# Watch mode for development
-npm run test:watch
+# Push to your GitHub repository
+git remote add origin https://github.com/your-username/enhanced-viral-news-bot.git
+git push -u origin main
 ```
 
-### **Test Categories:**
-- ✅ News aggregation functionality
-- ✅ Content scoring system  
-- ✅ Content moderation filters
-- ✅ Duplicate removal logic
-- ✅ Database operations
-- ✅ Rate limiting enforcement
-- ✅ API endpoints
-- ✅ Error handling
-- ✅ Performance tests
+### **Step 2: Create Render Service**
+1. Go to [render.com](https://render.com)
+2. Sign up/login with GitHub
+3. Click **"New +"** → **"Web Service"**
+4. Connect your GitHub repository
+5. Configure settings:
+   - **Name:** `enhanced-news-bot`
+   - **Environment:** `Node`
+   - **Build Command:** `npm install`
+   - **Start Command:** `npm start`
+   - **Plan:** `Free` (or paid for better performance)
 
-### **Example Test Output:**
+### **Step 3: Set Environment Variables**
+In Render dashboard, go to **Environment** tab and add:
+
+```env
+BOT_TOKEN=your_actual_bot_token_here
+NODE_ENV=production
+```
+
+### **Step 4: Deploy**
+1. Click **"Create Web Service"**
+2. Wait for build to complete (3-5 minutes)
+3. Copy your app URL: `https://enhanced-news-bot-xyz.onrender.com`
+4. Bot will automatically set webhook URL
+
+### **Step 5: Test Deployment**
 ```bash
- PASS  tests/newsBot.test.js
-  Enhanced News Bot Tests
-    ✓ should aggregate news from multiple sources
-    ✓ should calculate spice score correctly  
-    ✓ should filter profanity correctly
-    ✓ should remove duplicate articles
-    ✓ should categorize content properly
-    ✓ should enforce rate limits
+# Check health endpoint
+curl https://your-app.onrender.com/health
 
-Test Suites: 1 passed, 1 total
-Tests: 25 passed, 25 total
-Coverage: 85%+ on critical functions
+# Test bot by messaging it on Telegram
+# Try: /start, /youtubers, /spicy news
 ```
 
-## 📊 **Content Scoring Examples**
+**🎉 Your bot is now live with webhooks!**
 
-### **🌶️ High Spice Content (8-10):**
-- "YouTuber EXPOSED in Major Scandal"
-- "Bollywood Affair Controversy Erupts"  
-- "Cricket Match Fixing Drama Unfolds"
+---
 
-### **🕵️ High Conspiracy (7-10):**
-- "Government Cover-up Revealed"
-- "Secret YouTube Algorithm Exposed"
-- "Hidden Truth Behind Celebrity Death"
+## 🟣 **Option 2: Heroku**
 
-### **⚡ High Importance (8-10):**
-- "BREAKING: Emergency Declared"
-- "URGENT: Major Policy Change"
-- "ALERT: Crisis Situation Develops"
+**Good for:** Established apps, add-ons ecosystem
 
-## 🛡️ **Content Moderation**
-
-### **Automatically Filters:**
-- ❌ Profanity and slurs
-- ❌ Obvious fake news patterns
-- ❌ Spam content
-- ❌ Content older than 24 hours
-- ❌ Duplicate articles
-- ❌ Suspicious clickbait
-
-### **Moderation Example:**
-```javascript
-Input: "You won't believe this bullshit fake news"
-Output: 🚫 Filtered (profanity + suspicious pattern)
-
-Input: "Breaking: Political scandal exposed"  
-Output: ✅ Approved (spice: 7, importance: 8)
-```
-
-## 🚀 **Deployment**
-
-### **Render.com (Recommended):**
-1. Fork this repository
-2. Connect to Render.com
-3. Set environment variables:
-   - `BOT_TOKEN=your_token`
-   - `NODE_ENV=production`
-4. Deploy - webhooks auto-configure
-
-### **Heroku:**
+### **Step 1: Install Heroku CLI**
 ```bash
-# Install Heroku CLI
-heroku create your-bot-name
-heroku config:set BOT_TOKEN=your_token
+# macOS
+brew tap heroku/brew && brew install heroku
+
+# Windows (download from heroku.com)
+# Linux
+sudo snap install --classic heroku
+```
+
+### **Step 2: Login and Create App**
+```bash
+# Login to Heroku
+heroku login
+
+# Create new app
+heroku create enhanced-news-bot-123
+
+# Add buildpack for Node.js
+heroku buildpacks:add heroku/nodejs
+```
+
+### **Step 3: Configure Environment**
+```bash
+# Set bot token
+heroku config:set BOT_TOKEN=your_bot_token_here
+
+# Set production mode
 heroku config:set NODE_ENV=production
+
+# Set app URL (replace with your actual URL)
+heroku config:set HEROKU_APP_NAME=enhanced-news-bot-123
+```
+
+### **Step 4: Deploy Code**
+```bash
+# Add Heroku remote
+heroku git:remote -a enhanced-news-bot-123
+
+# Deploy
 git push heroku main
+
+# Check logs
+heroku logs --tail
 ```
 
-### **VPS/Server:**
+### **Step 5: Scale and Test**
 ```bash
-# Using PM2
-npm install -g pm2
-pm2 start server.js --name "news-bot"
-pm2 save
-pm2 startup
+# Ensure at least 1 dyno is running
+heroku ps:scale web=1
+
+# Open app
+heroku open
+
+# Test health endpoint
+curl https://enhanced-news-bot-123.herokuapp.com/health
 ```
 
-## 📈 **Monitoring & Analytics**
+---
 
-### **Built-in Endpoints:**
-```
-GET / - Bot status and statistics
-GET /health - Health check for monitoring  
-GET /analytics - Detailed analytics data
-GET /ping - Simple ping/pong test
-```
+## 🖥️ **Option 3: VPS/Server (Advanced)**
 
-### **Analytics Data:**
-- 📊 Total requests & success rate
-- ⏱️ Average response times
-- 🌶️ Content score distributions  
-- 👥 Active users & rate limits
-- 💾 Memory usage & performance
-- 📱 Command usage statistics
+**Good for:** Full control, custom configurations
 
-### **Example Analytics:**
-```json
-{
-  "bot": {
-    "totalRequests": 1250,
-    "successRate": "94.2%",
-    "averageResponseTime": "2.3s"
-  },
-  "content": {
-    "totalArticles": 1840,
-    "averageScore": "16.7/30",
-    "spicyCount": 420,
-    "conspiracyCount": 180
-  }
-}
-```
-
-## 🎬 **YouTube Channel Integration**
-
-### **Perfect Content for Your Channel:**
-1. **High-Score Articles** (20+ total score) = Viral potential
-2. **Spicy Drama** (7+ spice) = High engagement  
-3. **Conspiracy Content** (6+ conspiracy) = Click magnets
-4. **Breaking News** (8+ importance) = Trending topics
-5. **Multi-Platform Coverage** = Comprehensive stories
-
-### **Content Strategy Tips:**
-```
-🎯 Focus on articles with total score 18+
-🌶️ Prioritize spicy drama for thumbnails
-🕵️ Use conspiracy content for intrigue
-⚡ Cover breaking news for timing
-📱 Cross-reference social media buzz
-```
-
-### **Daily Workflow:**
-1. **Morning:** `/refresh` for latest content
-2. **Filter:** Use `/spicy` and `/conspiracy` commands  
-3. **Research:** Check highest-scored articles
-4. **Create:** Use top stories for video scripts
-5. **Track:** Monitor `/mystats` for trending patterns
-
-## 🛠️ **Advanced Configuration**
-
-### **Custom Keywords for Better Results:**
+### **Step 1: Server Setup (Ubuntu 20.04+)**
 ```bash
-# Add spicy YouTuber keywords
-/addkeyword youtubers "MrBeast controversy"
-/addkeyword youtubers "PewDiePie drama"
-/addkeyword youtubers "creator exposed"
+# Update system
+sudo apt update && sudo apt upgrade -y
 
-# Add Bollywood scandal keywords  
-/addkeyword bollywood "casting couch scandal"
-/addkeyword bollywood "celebrity affair exposed"
-/addkeyword bollywood "Bollywood mafia revealed"
+# Install Node.js 18+
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
 
-# Add conspiracy keywords
-/addkeyword national "government cover up"
-/addkeyword national "political conspiracy"
-/addkeyword national "election manipulation"
+# Install PM2 for process management
+sudo npm install -g pm2
+
+# Install Git
+sudo apt install git -y
 ```
 
-### **Rate Limiting Configuration:**
-- **10 requests per hour** per command per user
-- **Refresh limited** to prevent abuse
-- **Search commands** have separate limits
-- **Rate reset** every hour automatically
-
-### **Database Schema:**
-```sql
--- User keywords with priority
-user_keywords: user_id, category, keyword, priority
-
--- User preferences  
-user_preferences: user_id, spicy_level, conspiracy_mode
-
--- News cache with scores
-news_cache: title, url, spice_score, conspiracy_score, importance_score
-
--- Analytics tracking
-bot_analytics: user_id, command, response_time, success
-```
-
-## 🔧 **Development**
-
-### **Local Development:**
+### **Step 2: Deploy Application**
 ```bash
 # Clone repository
 git clone https://github.com/your-username/enhanced-viral-news-bot.git
 cd enhanced-viral-news-bot
 
 # Install dependencies
-npm install
+npm install --production
 
-# Set up environment
+# Create environment file
 cp .env.example .env
-# Edit .env with your bot token
-
-# Run in development mode (polling)
-npm run dev
-
-# Run tests
-npm test
+nano .env  # Edit with your settings
 ```
 
-### **Project Structure:**
-```
-enhanced-viral-news-bot/
-├── server.js                 # Main bot code
-├── tests/
-│   └── newsBot.test.js       # Unit tests
-├── logs/                     # Log files
-│   ├── error.log
-│   └── combined.log
-├── coverage/                 # Test coverage reports
-├── enhanced_news_bot.db      # SQLite database
-├── package.json              # Dependencies
-├── .env                      # Environment variables
-└── README.md                 # This file
-```
-
-### **Adding New Features:**
-1. **Add function** in server.js
-2. **Write tests** in tests/newsBot.test.js
-3. **Update documentation** in README.md
-4. **Test thoroughly** with `npm test`
-5. **Deploy and monitor**
-
-## 🚨 **Troubleshooting**
-
-### **Common Issues:**
-
-#### **Bot Not Responding:**
+### **Step 3: Configure Environment**
 ```bash
-# Check bot token
-echo $BOT_TOKEN
-
-# Check webhook status  
-curl https://api.telegram.org/bot$BOT_TOKEN/getWebhookInfo
-
-# Check logs
-npm run logs
+# Edit .env file
+BOT_TOKEN=your_bot_token_here
+NODE_ENV=production
+APP_URL=https://your-domain.com
+PORT=3000
 ```
 
-#### **No News Results:**
+### **Step 4: Start with PM2**
 ```bash
-# Check internet connection
-curl -I https://news.google.com
+# Create PM2 ecosystem file
+cat > ecosystem.config.js << EOF
+module.exports = {
+  apps: [{
+    name: 'enhanced-news-bot',
+    script: 'server.js',
+    instances: 1,
+    exec_mode: 'fork',
+    env: {
+      NODE_ENV: 'production',
+      PORT: 3000
+    },
+    error_file: 'logs/pm2-error.log',
+    out_file: 'logs/pm2-out.log',
+    log_file: 'logs/pm2-combined.log',
+    time: true
+  }]
+};
+EOF
 
-# Verify RSS feeds accessible
-curl "https://news.google.com/rss/search?q=test&hl=en-IN"
+# Start application
+pm2 start ecosystem.config.js
 
-# Check rate limiting
-# Wait 15 minutes and try again
+# Save PM2 configuration
+pm2 save
+
+# Setup PM2 to start on boot
+pm2 startup
 ```
 
-#### **Database Errors:**
+### **Step 5: Setup Reverse Proxy (Nginx)**
 ```bash
-# Check database file permissions
-ls -la enhanced_news_bot.db
+# Install Nginx
+sudo apt install nginx -y
 
-# Reset database (WARNING: loses data)
-rm enhanced_news_bot.db
-# Restart bot to recreate tables
-```
+# Create configuration
+sudo cat > /etc/nginx/sites-available/news-bot << EOF
+server {
+    listen 80;
+    server_name your-domain.com;
 
-#### **Webhook Issues:**
-```bash
-# Delete existing webhook
-curl -X POST "https://api.telegram.org/bot$BOT_TOKEN/deleteWebhook"
-
-# Set new webhook manually
-curl -X POST "https://api.telegram.org/bot$BOT_TOKEN/setWebhook?url=https://your-domain.com/webhook/$BOT_TOKEN"
-```
-
-### **Performance Issues:**
-```bash
-# Check memory usage
-curl http://localhost:3000/analytics
-
-# Monitor logs
-tail -f logs/combined.log
-
-# Check database size
-ls -lh enhanced_news_bot.db
-
-# Clean up old data (auto-cleanup runs every 30 min)
-# Manual cleanup if needed:
-sqlite3 enhanced_news_bot.db "DELETE FROM news_cache WHERE created_at < datetime('now', '-7 days')"
-```
-
-## 📊 **API Documentation**
-
-### **Health Check Endpoints:**
-```http
-GET /                 # Bot status & statistics
-GET /health          # Health check (for monitoring)
-GET /analytics       # Detailed analytics
-GET /ping            # Simple ping test
-```
-
-### **Webhook Endpoint:**
-```http
-POST /webhook/{BOT_TOKEN}    # Telegram webhook (auto-configured)
-```
-
-### **Example API Response:**
-```json
-{
-  "status": "Enhanced Viral News Bot v3.0",
-  "version": "3.0.0",
-  "features": [
-    "Working Direct Links",
-    "Content Scoring", 
-    "Moderation",
-    "Webhooks",
-    "Analytics"
-  ],
-  "stats": {
-    "totalNews": 1840,
-    "averageScore": 16,
-    "spicyContent": 420,
-    "conspiracyContent": 180,
-    "successRate": 94
-  }
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+    }
 }
+EOF
+
+# Enable site
+sudo ln -s /etc/nginx/sites-available/news-bot /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
 ```
 
-## 🎯 **Success Metrics**
-
-### **Content Quality Indicators:**
-- **High Spice Content:** 30%+ of articles with 7+ spice score
-- **Conspiracy Content:** 15%+ with 6+ conspiracy score  
-- **Fresh Content:** 100% articles within 24 hours
-- **Working Links:** 95%+ direct, non-broken URLs
-- **No Duplicates:** Advanced filtering removes 100% duplicates
-
-### **Performance Targets:**
-- **Response Time:** <3 seconds average
-- **Uptime:** 99%+ availability
-- **Success Rate:** 95%+ successful requests
-- **Error Rate:** <5% failed operations
-
-### **User Engagement:**
-- **Commands/User:** Track via `/mystats`
-- **Custom Keywords:** Monitor additions per category
-- **Search Usage:** Track `/spicy` vs `/conspiracy` usage
-- **Content Preferences:** Analyze most-requested categories
-
-## 🔐 **Security Features**
-
-### **Built-in Protection:**
-- ✅ **Rate Limiting:** Prevents spam and abuse
-- ✅ **Content Moderation:** Filters inappropriate content
-- ✅ **Input Sanitization:** Prevents injection attacks
-- ✅ **Error Handling:** Graceful failure management
-- ✅ **Database Security:** Parameterized queries
-- ✅ **Environment Variables:** Secure token storage
-
-### **Best Practices:**
+### **Step 6: Setup SSL (Let's Encrypt)**
 ```bash
-# Keep bot token secure
-echo "BOT_TOKEN=your_token" >> .env
-echo ".env" >> .gitignore
+# Install Certbot
+sudo apt install certbot python3-certbot-nginx -y
 
-# Regular updates
-npm audit
-npm update
+# Get SSL certificate
+sudo certbot --nginx -d your-domain.com
 
-# Monitor logs for suspicious activity
-grep "error\|failed\|blocked" logs/combined.log
+# Test auto-renewal
+sudo certbot renew --dry-run
 ```
-
-## 📞 **Support & Contact**
-
-### **Getting Help:**
-1. **Check logs** first: `npm run logs`
-2. **Run tests** to verify: `npm test`
-3. **Check analytics** for issues: `curl localhost:3000/analytics`
-4. **Review documentation** above
-5. **Create GitHub issue** with details
-
-### **Contributing:**
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature-name`
-3. Write tests for new features
-4. Ensure all tests pass: `npm test`
-5. Submit pull request with description
-
-### **Feature Requests:**
-Open GitHub issue with:
-- **Clear description** of desired feature
-- **Use case** explanation
-- **Expected behavior** details
-- **Additional context** if needed
-
-## 📝 **License**
-
-MIT License - feel free to use for personal and commercial projects.
-
-## 🎉 **Changelog**
-
-### **v3.0.0 (Current)**
-- ✅ **Webhooks** instead of polling
-- ✅ **Unit tests** with Jest
-- ✅ **Content moderation** system
-- ✅ **Advanced scoring** (spice/conspiracy/importance)
-- ✅ **Rate limiting** protection
-- ✅ **Enhanced keywords** per category
-- ✅ **Database integration** with SQLite
-- ✅ **Analytics dashboard**
-- ✅ **Performance optimization**
-
-### **v2.0.0**
-- 📱 Multi-platform search
-- 🔗 Working link extraction
-- 📊 Basic content scoring
-- ⏰ 24-hour content filtering
-
-### **v1.0.0**
-- 🤖 Basic Telegram bot
-- 📰 Google News RSS parsing
-- 📂 Category-based search
-- 🔄 Simple keyword management
 
 ---
 
-**🔥 Ready to create viral YouTube content with the spiciest, most controversial news available!**
+## 🐳 **Option 4: Docker (All Platforms)**
 
-**🎬 Perfect for news channels focused on drama, conspiracy, and breaking stories!**
+**Good for:** Containerized deployments, consistent environments
 
-**⚡ Get started now and dominate the YouTube news space!**
+### **Step 1: Create Dockerfile**
+```dockerfile
+# Dockerfile
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy application code
+COPY . .
+
+# Create logs directory
+RUN mkdir -p logs
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
+
+# Start application
+CMD ["npm", "start"]
+```
+
+### **Step 2: Create docker-compose.yml**
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  news-bot:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - NODE_ENV=production
+      - APP_URL=${APP_URL}
+    volumes:
+      - ./logs:/app/logs
+      - ./enhanced_news_bot.db:/app/enhanced_news_bot.db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  logs:
+  database:
+```
+
+### **Step 3: Deploy with Docker**
+```bash
+# Create environment file
+echo "BOT_TOKEN=your_bot_token_here" > .env
+echo "APP_URL=https://your-domain.com" >> .env
+
+# Build and run
+docker-compose up -d
+
+# Check logs
+docker-compose logs -f
+
+# Check health
+curl http://local
