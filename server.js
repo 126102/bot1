@@ -113,18 +113,23 @@ function isWithin24Hours(dateString) {
 function categorizeNews(title, description = '') {
   const content = `${title} ${description}`.toLowerCase();
   
-  if (content.match(/carry|triggered|bhuvan|ashish|dhruv|technical|youtube|youtuber|gaming|roast|vlog/)) {
+  // Enhanced YouTuber detection - more comprehensive
+  if (content.match(/carry|carryminati|triggered|insaan|bhuvan|bb ki vines|ashish|chanchlani|dhruv|rathee|technical|guruji|elvish|yadav|youtube|youtuber|subscriber|gaming|roast|vlog|creator|influencer|streamer|viral video|content creator|social media star|gaming channel|comedy channel|tech channel|family vlog|reaction video|collab|collaboration|brand deal|monetization|demonetization|subscriber milestone|trending video|viral content|digital creator|online creator/)) {
     return 'youtubers';
   }
-  if (content.match(/salman|shahrukh|srk|alia|ranbir|bollywood|film|movie|actor|actress/)) {
+  
+  if (content.match(/salman|shahrukh|srk|alia|ranbir|katrina|akshay|ranveer|deepika|bollywood|film|movie|actor|actress|cinema|hindi cinema|mumbai film|bollywood gossip|celebrity wedding|box office|film industry|hindi film/)) {
     return 'bollywood';
   }
-  if (content.match(/virat|kohli|rohit|sharma|dhoni|cricket|ipl|bcci|wicket|match/)) {
+  
+  if (content.match(/virat|kohli|rohit|sharma|dhoni|cricket|ipl|india vs|hardik|rahul|bumrah|wicket|century|match|bcci|test match|odi|t20|world cup|indian cricket|cricket team|sports/)) {
     return 'cricket';
   }
-  if (content.match(/pakistan|karachi|lahore|pakistani/)) {
+  
+  if (content.match(/pakistan|imran khan|karachi|lahore|islamabad|pakistani|pti|pml|pakistan government|pakistan news|pakistan politics/)) {
     return 'pakistan';
   }
+  
   return 'national';
 }
 
@@ -482,7 +487,7 @@ async function aggregateNews() {
   return newsCache;
 }
 
-// Safe Markdown formatting
+// Safe Markdown formatting - SHOW ALL RESULTS (No limit)
 function formatNewsMessage(articles, category) {
   if (!articles || articles.length === 0) {
     return `❌ No recent ${category} news found. Try /refresh or add keywords!`;
@@ -490,6 +495,7 @@ function formatNewsMessage(articles, category) {
 
   let message = `🔥 *${category.toUpperCase()} NEWS* (Last 24 Hours)\n\n`;
   
+  // SHOW ALL ARTICLES - no limit, no chunking in formatter
   articles.forEach((article, index) => {
     // Clean title for safe Markdown
     let cleanTitle = article.title
