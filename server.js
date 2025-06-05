@@ -1,4 +1,274 @@
-const TelegramBot = require('node-telegram-bot-api');
+// Enhanced LIST KEYWORDS command
+  bot.onText(/\/listkeywords/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    try {
+      let message = '📝 *YOUR CUSTOM KEYWORDS*\n\n';
+      let totalKeywords = 0;
+      
+      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+      
+      for (const category of categories) {
+        const userKeywords = await database.getUserKeywords(userId, category);
+        const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
+        
+        message += `${icon} *${category.toUpperCase()}* (${userKeywords.length}):\n`;
+        
+        if (userKeywords.length > 0) {
+          userKeywords.forEach((k, index) => {
+            message += `${index + 1}. ${k.keyword} (Priority: ${k.priority})\n`;
+          });
+        } else {
+          message += `• No custom keywords yet\n`;
+        }
+        message += '\n';
+        totalKeywords += userKeywords.length;
+      }
+      
+      message += `📊 *Total Custom Keywords:* ${totalKeywords}\n\n`;
+      message += `💡 *Add more with:* /addkeyword <category> <keyword>\n`;
+      message += `🗑️ *Remove with:* /removekeyword <category> <keyword>\n`;
+      message += `🌶️ *Tip:* Use spicy words like "drama", "scandal", "exposed"`;
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      logger.error('List keywords error:', error);
+      await bot.sendMessage(chatId, `❌ *Error fetching keywords*`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  // NEW: REMOVE KEYWORD command
+  bot.onText(/\/removekeyword (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const input = match[1].trim();
+    const parts = input.split(' ');
+    
+    if (parts.length < 2) {
+      await bot.sendMessage(chatId, `❌ *Usage:* /removekeyword <category> <keyword>\n\n*Example:* /removekeyword youtubers drama`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keyword = parts.slice(1).join(' ');
+    
+    if (!ENHANCED_SEARCH_KEYWORDS[category]) {
+      await bot.sendMessage(chatId, `❌ *Invalid category!*\n\n*Valid:* youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    try {
+      // Remove from database
+      const removed = await new Promise((resolve, reject) => {
+        database.db.run(
+          'DELETE FROM user_keywords WHERE user_id = ? AND category = ? AND keyword = ?',
+          [userId, category, keyword],
+          function(err) {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(this.changes > 0);
+            }
+          }
+        );
+      });
+      
+      if (!removed) {
+        await bot.sendMessage(chatId, `❌ *Not found!* "${keyword}" not in your ${category} keywords`, { parse_mode: 'Markdown' });
+        return;
+      }
+      
+      // Remove from runtime keywords
+      const keywordIndex = ENHANCED_SEARCH_KEYWORDS[category].spicy.indexOf(keyword);
+      if (keywordIndex > -1) {
+        ENHANCED_SEARCH_KEYWORDS[category].spicy.splice(keywordIndex, 1);
+      }
+      
+      const remainingKeywords = await database.getUserKeywords(userId, category);
+      
+      await bot.sendMessage(chatId, `✅ *Keyword Removed Successfully!*
+
+🗑️ *Removed:* "${keyword}"
+📂 *Category:* ${category}
+📊 *Remaining keywords:* ${remainingKeywords.length}
+
+💡 *Add new keywords with:* /addkeyword ${category} <keyword>`, { parse_mode: 'Markdown' });
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      logger.error('Remove keyword error:', error);
+      await bot.sendMessage(chatId, `❌ *Error removing keyword*\n\nTry again later`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  // NEW: USER STATS command
+  bot.onText(/\/mystats/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    try {
+      // Get user analytics from database
+      const userStats = await new Promise((resolve, reject) => {
+        database.db.all(
+          `SELECT command, category, COUNT(*) as count, AVG(response_time) as avg_time 
+           FROM bot_analytics 
+           WHERE user_id = ? 
+           GROUP BY command, category 
+           ORDER BY count DESC`,
+          [userId],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+          }
+        );
+      });
+      
+      let message = `📊 *YOUR USAGE STATISTICS*\n\n`;
+      
+      if (userStats.length === 0) {
+        message += `📈 *No usage data yet*\n\nStart using commands to see your stats!`;
+      } else {
+        const totalRequests = userStats.reduce((sum, stat) => sum + stat.count, 0);
+        const avgResponseTime = Math.round(userStats.reduce((sum, stat) => sum + (stat.avg_time * stat.count), 0) / totalRequests);
+        
+        message += `🎯 *Total Requests:* ${totalRequests}\n`;
+        message += `⚡ *Avg Response Time:* ${avgResponseTime}ms\n\n`;
+        message += `📋 *Command Usage:*\n`;
+        
+        userStats.slice(0, 10).forEach(stat => {
+          const icon = stat.command === 'youtubers' ? '📱' : stat.command === 'bollywood' ? '🎬' : stat.command === 'cricket' ? '🏏' : stat.command === 'pakistan' ? '🇵🇰' : '🔍';
+          message += `${icon} /${stat.command}: ${stat.count} times\n`;
+        });
+        
+        // Find most used command
+        const mostUsed = userStats[0];
+        message += `\n🏆 *Most Used:* /${mostUsed.command} (${mostUsed.count} times)`;
+      }
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      logger.error('User stats error:', error);
+      await bot.sendMessage(chatId, `❌ *Error fetching statistics*`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  // NEW: CONSPIRACY command
+  bot.onText(/\/conspiracy (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const searchTerm = match[1].trim();
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'conspiracy');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ *Rate limit exceeded*\n\nTry again in ${rateLimitCheck.resetTime} minutes.`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    if (searchTerm.length < 2) {
+      await bot.sendMessage(chatId, `❌ *Search term too short!*\n\n*Usage:* /conspiracy <term>`, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    try {
+      await bot.sendMessage(chatId, `🕵️ *CONSPIRACY SEARCH: "${searchTerm}"*\n\n🔍 Finding hidden truths, exposés & secrets...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+
+      const searchResults = await scrapeEnhancedNews(searchTerm, categorizeNews(searchTerm));
+      
+      // Filter for high conspiracy score only (5+)
+      const conspiracyResults = searchResults.filter(article => (article.conspiracyScore || 0) >= 5);
+      
+      if (conspiracyResults.length === 0) {
+        await bot.sendMessage(chatId, `❌ *No conspiracy content found for "${searchTerm}"*\n\n🔧 Try keywords like: exposed, secret, hidden, conspiracy`, { parse_mode: 'Markdown' });
+        return;
+      }
+
+      await formatAndSendEnhancedNewsMessage(chatId, conspiracyResults, `Conspiracy: ${searchTerm}`, bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'conspiracy', 'search', responseTime);
+      } catch (dbError) {
+        logger.warn('Analytics logging failed:', dbError.message);
+      }
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+
+    } catch (error) {
+      logger.error(`Conspiracy search error for "${searchTerm}":`, error);
+      await bot.sendMessage(chatId, `❌ *Conspiracy search failed*\n\nTry again or use /spicy`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  // NEW: SETTINGS/HELP command
+  bot.onText(/\/settings|\/help/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    const settingsMessage = `⚙️ *BOT SETTINGS & FEATURES*
+
+*🎯 All Working Commands:*
+/start - Welcome & command list
+/youtubers - Spicy YouTube drama 🎥
+/bollywood - Celebrity scandals 🎭
+/cricket - Sports controversies 🏏
+/national - Political drama 🇮🇳
+/pakistan - Pakistani conspiracy 🇵🇰
+/latest - Top scored content 🔥
+
+*🔍 Advanced Search:*
+/search <term> - Multi-platform search
+/spicy <term> - High controversy only (6+ spice)
+/conspiracy <term> - Hidden truths (5+ conspiracy)
+
+*🛠️ Keyword Management:*
+/addkeyword <category> <keyword> - Add custom
+/removekeyword <category> <keyword> - Remove
+/listkeywords - View all your keywords
+
+*📊 Analytics & Info:*
+/mystats - Your usage statistics
+/refresh - Force refresh all sources
+/settings or /help - This menu
+
+*📊 Content Scoring System:*
+🌶️ *Spice (1-10):* Drama, controversy, fights
+🕵️ *Conspiracy (1-10):* Secrets, exposés, truths
+⚡ *Importance (1-10):* Breaking, urgent news
+
+*🎬 Perfect for YouTube Channels!*
+✅ Multi-platform coverage (News→Twitter→Instagram→YouTube)
+✅ Working direct links (clickable URLs)
+✅ Latest 24-hour fresh content only
+✅ Your custom keywords integrated
+✅ Up to 50 articles per category
+✅ Content scoring & ranking
+✅ Spam & inappropriate content filtering
+
+*💡 Pro Tips:*
+• Use /spicy for maximum drama content
+• Add keywords like "exposed", "scandal", "controversy"
+• Check /mystats to track your usage patterns
+• Use /latest for top-scored viral content across all categories
+
+*🔥 Get the spiciest, most controversial content for your channel!*`;
+
+    await bot.sendMessage(chatId, settingsMessage, { parse_mode: 'Markdown' });
+  });        let cleanUrl = article.link;
+        if (cleanUrl && cleanUrl.length > 180) {
+          cleanUrl = cleanUrl.substring(0const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const express = require('express');
@@ -608,12 +878,12 @@ async function scrapeEnhancedNews(query, category) {
   }
 }
 
-// Enhanced content fetching
-async function fetchEnhancedContent(category) {
+// Enhanced content fetching with user keywords integration
+async function fetchEnhancedContent(category, userId = null) {
   const allArticles = [];
   
   try {
-    logger.info(`🎯 Enhanced ${category} content (max 50 articles)...`);
+    logger.info(`🎯 Enhanced ${category} content (targeting 50+ latest articles)...`);
     
     const categoryKeywords = ENHANCED_SEARCH_KEYWORDS[category];
     if (!categoryKeywords) {
@@ -621,10 +891,41 @@ async function fetchEnhancedContent(category) {
       return [];
     }
     
-    for (const keyword of categoryKeywords.spicy.slice(0, 2)) {
+    // Get user's custom keywords if userId provided
+    let userKeywords = [];
+    if (userId) {
+      try {
+        userKeywords = await database.getUserKeywords(userId, category);
+        logger.info(`📝 Found ${userKeywords.length} user keywords for ${category}`);
+      } catch (error) {
+        logger.warn('Could not fetch user keywords:', error.message);
+      }
+    }
+    
+    // Search using user's custom keywords first (highest priority)
+    for (const userKeyword of userKeywords.slice(0, 3)) {
+      try {
+        logger.info(`   → User keyword search: ${userKeyword.keyword}`);
+        const articles = await scrapeEnhancedNews(userKeyword.keyword + ' latest', category);
+        
+        const categoryArticles = articles.filter(article => 
+          article.category === category || categorizeNews(article.title, article.description) === category
+        );
+        
+        allArticles.push(...categoryArticles);
+        logger.info(`     ✅ Found ${categoryArticles.length} articles for user keyword`);
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        logger.error(`User keyword search error for ${userKeyword.keyword}:`, error.message);
+      }
+    }
+    
+    // Search using spicy keywords (second priority)
+    for (const keyword of categoryKeywords.spicy.slice(0, 4)) {
       try {
         logger.info(`   → Spicy search: ${keyword}`);
-        const articles = await scrapeEnhancedNews(keyword, category);
+        const articles = await scrapeEnhancedNews(keyword + ' today', category);
         
         const categoryArticles = articles.filter(article => 
           article.category === category || categorizeNews(article.title, article.description) === category
@@ -633,28 +934,87 @@ async function fetchEnhancedContent(category) {
         allArticles.push(...categoryArticles);
         logger.info(`     ✅ Found ${categoryArticles.length} spicy articles`);
         
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 800));
       } catch (error) {
         logger.error(`Spicy search error for ${keyword}:`, error.message);
       }
     }
+    
+    // Search using conspiracy keywords (third priority)
+    for (const keyword of categoryKeywords.conspiracy.slice(0, 3)) {
+      try {
+        logger.info(`   → Conspiracy search: ${keyword}`);
+        const articles = await scrapeEnhancedNews(keyword + ' news', category);
+        
+        const categoryArticles = articles.filter(article => 
+          article.category === category || categorizeNews(article.title, article.description) === category
+        );
+        
+        allArticles.push(...categoryArticles);
+        logger.info(`     ✅ Found ${categoryArticles.length} conspiracy articles`);
+        
+        await new Promise(resolve => setTimeout(resolve, 800));
+      } catch (error) {
+        logger.error(`Conspiracy search error for ${keyword}:`, error.message);
+      }
+    }
+    
+    // Search using important keywords (fourth priority)
+    for (const keyword of categoryKeywords.important.slice(0, 3)) {
+      try {
+        logger.info(`   → Important search: ${keyword}`);
+        const articles = await scrapeEnhancedNews(keyword + ' breaking', category);
+        
+        const categoryArticles = articles.filter(article => 
+          article.category === category || categorizeNews(article.title, article.description) === category
+        );
+        
+        allArticles.push(...categoryArticles);
+        logger.info(`     ✅ Found ${categoryArticles.length} important articles`);
+        
+        await new Promise(resolve => setTimeout(resolve, 600));
+      } catch (error) {
+        logger.error(`Important search error for ${keyword}:`, error.message);
+      }
+    }
 
+    // Advanced duplicate removal
     const uniqueArticles = [];
     const seenTitles = new Set();
+    const seenLinks = new Set();
     
     for (const article of allArticles) {
       const titleKey = article.title.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').substring(0, 50);
+      const linkKey = article.link.toLowerCase().replace(/[^\w]/g, '').substring(0, 80);
       
-      if (!seenTitles.has(titleKey)) {
+      if (!seenTitles.has(titleKey) && !seenLinks.has(linkKey)) {
         seenTitles.add(titleKey);
+        seenLinks.add(linkKey);
         uniqueArticles.push(article);
       }
     }
     
-    const sortedArticles = uniqueArticles.sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0));
+    // Sort by recency first, then by total score
+    const sortedArticles = uniqueArticles.sort((a, b) => {
+      // First priority: timestamp (newer first)
+      const aTime = new Date(a.timestamp || a.pubDate);
+      const bTime = new Date(b.timestamp || b.pubDate);
+      const timeDiff = bTime - aTime;
+      
+      // If time difference is significant (more than 6 hours), prioritize by time
+      if (Math.abs(timeDiff) > 6 * 60 * 60 * 1000) {
+        return timeDiff;
+      }
+      
+      // Otherwise, prioritize by score
+      return (b.totalScore || 0) - (a.totalScore || 0);
+    });
+    
+    // Get up to 50 articles
     const finalArticles = sortedArticles.slice(0, 50);
 
-    logger.info(`✅ ${category}: ${finalArticles.length} unique articles (sorted by total score)`);
+    logger.info(`✅ ${category}: ${finalArticles.length} latest articles (with user keywords)`);
+    logger.info(`📊 Score range: ${finalArticles.length > 0 ? Math.max(...finalArticles.map(a => a.totalScore || 0)) : 0} - ${finalArticles.length > 0 ? Math.min(...finalArticles.map(a => a.totalScore || 0)) : 0}`);
     
     return finalArticles;
     
@@ -846,12 +1206,14 @@ async function formatAndSendEnhancedNewsMessage(chatId, articles, category, bot)
         chunkMessage += `${globalIndex}. ${icon} ${spiceIcon}${conspiracyIcon}${importanceIcon} *${cleanTitle}*\n`;
         chunkMessage += `   📊 Score: ${article.totalScore || 0}/30 | 📄 ${article.source} | ⏰ ${article.formattedDate}\n`;
         
+        // Create clickable link with proper formatting
         let cleanUrl = article.link;
-        if (cleanUrl && cleanUrl.length > 180) {
-          cleanUrl = cleanUrl.substring(0, 180) + '...';
+        if (cleanUrl && cleanUrl.length > 150) {
+          cleanUrl = cleanUrl.substring(0, 150) + '...';
         }
         
-        chunkMessage += `   🔗 [Open Link](${cleanUrl})\n\n`;
+        // Use proper Telegram link format for clickability
+        chunkMessage += `   🔗 [📖 Read Full Story](${article.link})\n\n`;
       });
       
       if (i + 1 === totalChunks) {
@@ -1001,24 +1363,473 @@ if (bot) {
     }
   });
 
-  bot.onText(/\/youtubers/, async (msg) => {
+  bot.onText(/\/bollywood/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const startTime = Date.now();
     
-    const rateLimitCheck = checkUserRateLimit(userId, 'youtubers');
+    const rateLimitCheck = checkUserRateLimit(userId, 'bollywood');
     if (!rateLimitCheck.allowed) {
       await bot.sendMessage(chatId, `⏰ *Rate limit exceeded*\n\nTry again in ${rateLimitCheck.resetTime} minutes.`, { parse_mode: 'Markdown' });
       return;
     }
     
     try {
-      bot.sendMessage(chatId, `🎥 *Getting SPICIEST YouTuber drama & conspiracy...*\n\n🔍 Searching for controversies, exposés & secrets\n⏳ Please wait 30-60 seconds...\n\n🌶️ *Focus: Maximum spice level content*`, { parse_mode: 'Markdown' });
+      bot.sendMessage(chatId, `🎭 *Getting SPICIEST Bollywood scandals & secrets...*\n\n🔍 Searching for affairs, controversies & exposés\n🌶️ *Focus: Celebrity drama & conspiracy*`, { parse_mode: 'Markdown' });
       
-      logger.info('🎥 FORCING fresh YouTuber search with enhanced scoring...');
-      const freshNews = await fetchEnhancedContent('youtubers');
+      const freshNews = await fetchEnhancedContent('bollywood');
+      const bollywoodNews = freshNews.length > 0 ? freshNews : createFallbackContent('bollywood');
       
-      if (freshNews.length > 0) {
+      newsCache = newsCache.filter(article => article.category !== 'bollywood');
+      newsCache.push(...bollywoodNews);
+      
+      await formatAndSendEnhancedNewsMessage(chatId, bollywoodNews, 'Bollywood', bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'bollywood', 'bollywood', responseTime);
+      } catch (dbError) {
+        logger.warn('Analytics logging failed:', dbError.message);
+      }
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      logger.error('❌ Bollywood command error:', error);
+      await bot.sendMessage(chatId, `❌ *Error fetching Bollywood news*`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  bot.onText(/\/cricket/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'cricket');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ *Rate limit exceeded*\n\nTry again in ${rateLimitCheck.resetTime} minutes.`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    try {
+      bot.sendMessage(chatId, `🏏 *Getting SPICIEST Cricket controversies & fixes...*\n\n🔍 Searching for match fixing, scandals & drama\n🌶️ *Focus: Sports corruption & conspiracy*`, { parse_mode: 'Markdown' });
+      
+      const freshNews = await fetchEnhancedContent('cricket');
+      const cricketNews = freshNews.length > 0 ? freshNews : createFallbackContent('cricket');
+      
+      newsCache = newsCache.filter(article => article.category !== 'cricket');
+      newsCache.push(...cricketNews);
+      
+      await formatAndSendEnhancedNewsMessage(chatId, cricketNews, 'Cricket', bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'cricket', 'cricket', responseTime);
+      } catch (dbError) {
+        logger.warn('Analytics logging failed:', dbError.message);
+      }
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      logger.error('❌ Cricket command error:', error);
+      await bot.sendMessage(chatId, `❌ *Error fetching Cricket news*`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  bot.onText(/\/national/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'national');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ *Rate limit exceeded*\n\nTry again in ${rateLimitCheck.resetTime} minutes.`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    try {
+      bot.sendMessage(chatId, `🇮🇳 *Getting SPICIEST Political drama & exposés...*\n\n🔍 Searching for corruption, scandals & cover-ups\n🌶️ *Focus: Government conspiracy & drama*`, { parse_mode: 'Markdown' });
+      
+      const freshNews = await fetchEnhancedContent('national');
+      const nationalNews = freshNews.length > 0 ? freshNews : createFallbackContent('national');
+      
+      newsCache = newsCache.filter(article => article.category !== 'national');
+      newsCache.push(...nationalNews);
+      
+      await formatAndSendEnhancedNewsMessage(chatId, nationalNews, 'National', bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'national', 'national', responseTime);
+      } catch (dbError) {
+        logger.warn('Analytics logging failed:', dbError.message);
+      }
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      logger.error('❌ National command error:', error);
+      await bot.sendMessage(chatId, `❌ *Error fetching National news*`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  bot.onText(/\/pakistan/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'pakistan');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ *Rate limit exceeded*\n\nTry again in ${rateLimitCheck.resetTime} minutes.`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    try {
+      bot.sendMessage(chatId, `🇵🇰 *Getting SPICIEST Pakistan conspiracy & crisis...*\n\n🔍 Searching for ISI secrets, political drama & exposés\n🌶️ *Focus: Deep state & corruption*`, { parse_mode: 'Markdown' });
+      
+      const freshNews = await fetchEnhancedContent('pakistan');
+      const pakistanNews = freshNews.length > 0 ? freshNews : createFallbackContent('pakistan');
+      
+      newsCache = newsCache.filter(article => article.category !== 'pakistan');
+      newsCache.push(...pakistanNews);
+      
+      await formatAndSendEnhancedNewsMessage(chatId, pakistanNews, 'Pakistani', bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'pakistan', 'pakistan', responseTime);
+      } catch (dbError) {
+        logger.warn('Analytics logging failed:', dbError.message);
+      }
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      logger.error('❌ Pakistan command error:', error);
+      await bot.sendMessage(chatId, `❌ *Error fetching Pakistan news*`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  bot.onText(/\/latest/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    try {
+      bot.sendMessage(chatId, '🔄 *Getting top-scored content from all categories...*', { parse_mode: 'Markdown' });
+      
+      if (newsCache.length === 0) {
+        // Quick aggregation from all categories
+        const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+        const allNews = [];
+        
+        for (const category of categories) {
+          try {
+            const categoryNews = await fetchEnhancedContent(category);
+            allNews.push(...categoryNews);
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } catch (error) {
+            logger.error(`Error fetching ${category}:`, error.message);
+          }
+        }
+        newsCache = allNews;
+      }
+      
+      // Get top 20 highest scoring articles
+      const topScoredNews = newsCache
+        .sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0))
+        .slice(0, 20);
+      
+      const avgScore = topScoredNews.length > 0 ? Math.round(topScoredNews.reduce((sum, item) => sum + (item.totalScore || 0), 0) / topScoredNews.length) : 0;
+      
+      await formatAndSendEnhancedNewsMessage(chatId, topScoredNews, 'Top Scored', bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'latest', 'all', responseTime);
+      } catch (dbError) {
+        logger.warn('Analytics logging failed:', dbError.message);
+      }
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      logger.error('❌ Latest command error:', error);
+      await bot.sendMessage(chatId, `❌ *Error fetching latest news*`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  // NEW: CONSPIRACY command
+  bot.onText(/\/conspiracy (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const searchTerm = match[1].trim();
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'conspiracy');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ *Rate limit exceeded*\n\nTry again in ${rateLimitCheck.resetTime} minutes.`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    if (searchTerm.length < 2) {
+      await bot.sendMessage(chatId, `❌ *Search term too short!*\n\n*Usage:* /conspiracy <term>`, { parse_mode: 'Markdown' });
+      return;
+    }
+
+    try {
+      await bot.sendMessage(chatId, `🕵️ *CONSPIRACY SEARCH: "${searchTerm}"*\n\n🔍 Finding hidden truths, exposés & secrets...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+
+      const searchResults = await scrapeEnhancedNews(searchTerm, categorizeNews(searchTerm));
+      
+      // Filter for high conspiracy score only (5+)
+      const conspiracyResults = searchResults.filter(article => (article.conspiracyScore || 0) >= 5);
+      
+      if (conspiracyResults.length === 0) {
+        await bot.sendMessage(chatId, `❌ *No conspiracy content found for "${searchTerm}"*\n\n🔧 Try keywords like: exposed, secret, hidden, conspiracy`, { parse_mode: 'Markdown' });
+        return;
+      }
+
+      await formatAndSendEnhancedNewsMessage(chatId, conspiracyResults, `Conspiracy: ${searchTerm}`, bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'conspiracy', 'search', responseTime);
+      } catch (dbError) {
+        logger.warn('Analytics logging failed:', dbError.message);
+      }
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+
+    } catch (error) {
+      logger.error(`Conspiracy search error for "${searchTerm}":`, error);
+      await bot.sendMessage(chatId, `❌ *Conspiracy search failed*\n\nTry again or use /spicy`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  // Enhanced LIST KEYWORDS command
+  bot.onText(/\/listkeywords/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    try {
+      let message = '📝 *YOUR CUSTOM KEYWORDS*\n\n';
+      let totalKeywords = 0;
+      
+      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+      
+      for (const category of categories) {
+        const userKeywords = await database.getUserKeywords(userId, category);
+        const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
+        
+        message += `${icon} *${category.toUpperCase()}* (${userKeywords.length}):\n`;
+        
+        if (userKeywords.length > 0) {
+          userKeywords.forEach((k, index) => {
+            message += `${index + 1}. ${k.keyword} (Priority: ${k.priority})\n`;
+          });
+        } else {
+          message += `• No custom keywords yet\n`;
+        }
+        message += '\n';
+        totalKeywords += userKeywords.length;
+      }
+      
+      message += `📊 *Total Custom Keywords:* ${totalKeywords}\n\n`;
+      message += `💡 *Add more with:* /addkeyword <category> <keyword>\n`;
+      message += `🗑️ *Remove with:* /removekeyword <category> <keyword>\n`;
+      message += `🌶️ *Tip:* Use spicy words like "drama", "scandal", "exposed"`;
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      logger.error('List keywords error:', error);
+      await bot.sendMessage(chatId, `❌ *Error fetching keywords*`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  // NEW: REMOVE KEYWORD command
+  bot.onText(/\/removekeyword (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const input = match[1].trim();
+    const parts = input.split(' ');
+    
+    if (parts.length < 2) {
+      await bot.sendMessage(chatId, `❌ *Usage:* /removekeyword <category> <keyword>\n\n*Example:* /removekeyword youtubers drama`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keyword = parts.slice(1).join(' ');
+    
+    if (!ENHANCED_SEARCH_KEYWORDS[category]) {
+      await bot.sendMessage(chatId, `❌ *Invalid category!*\n\n*Valid:* youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    try {
+      // Remove from database
+      const removed = await new Promise((resolve, reject) => {
+        database.db.run(
+          'DELETE FROM user_keywords WHERE user_id = ? AND category = ? AND keyword = ?',
+          [userId, category, keyword],
+          function(err) {
+            if (err) {
+              reject(err);
+            } else {
+              resolve(this.changes > 0);
+            }
+          }
+        );
+      });
+      
+      if (!removed) {
+        await bot.sendMessage(chatId, `❌ *Not found!* "${keyword}" not in your ${category} keywords`, { parse_mode: 'Markdown' });
+        return;
+      }
+      
+      // Remove from runtime keywords
+      const keywordIndex = ENHANCED_SEARCH_KEYWORDS[category].spicy.indexOf(keyword);
+      if (keywordIndex > -1) {
+        ENHANCED_SEARCH_KEYWORDS[category].spicy.splice(keywordIndex, 1);
+      }
+      
+      const remainingKeywords = await database.getUserKeywords(userId, category);
+      
+      await bot.sendMessage(chatId, `✅ *Keyword Removed Successfully!*
+
+🗑️ *Removed:* "${keyword}"
+📂 *Category:* ${category}
+📊 *Remaining keywords:* ${remainingKeywords.length}
+
+💡 *Add new keywords with:* /addkeyword ${category} <keyword>`, { parse_mode: 'Markdown' });
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      logger.error('Remove keyword error:', error);
+      await bot.sendMessage(chatId, `❌ *Error removing keyword*\n\nTry again later`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  // NEW: USER STATS command
+  bot.onText(/\/mystats/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    try {
+      // Get user analytics from database
+      const userStats = await new Promise((resolve, reject) => {
+        database.db.all(
+          `SELECT command, category, COUNT(*) as count, AVG(response_time) as avg_time 
+           FROM bot_analytics 
+           WHERE user_id = ? 
+           GROUP BY command, category 
+           ORDER BY count DESC`,
+          [userId],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+          }
+        );
+      });
+      
+      let message = `📊 *YOUR USAGE STATISTICS*\n\n`;
+      
+      if (userStats.length === 0) {
+        message += `📈 *No usage data yet*\n\nStart using commands to see your stats!`;
+      } else {
+        const totalRequests = userStats.reduce((sum, stat) => sum + stat.count, 0);
+        const avgResponseTime = Math.round(userStats.reduce((sum, stat) => sum + (stat.avg_time * stat.count), 0) / totalRequests);
+        
+        message += `🎯 *Total Requests:* ${totalRequests}\n`;
+        message += `⚡ *Avg Response Time:* ${avgResponseTime}ms\n\n`;
+        message += `📋 *Command Usage:*\n`;
+        
+        userStats.slice(0, 10).forEach(stat => {
+          const icon = stat.command === 'youtubers' ? '📱' : stat.command === 'bollywood' ? '🎬' : stat.command === 'cricket' ? '🏏' : stat.command === 'pakistan' ? '🇵🇰' : '🔍';
+          message += `${icon} /${stat.command}: ${stat.count} times\n`;
+        });
+        
+        // Find most used command
+        const mostUsed = userStats[0];
+        message += `\n🏆 *Most Used:* /${mostUsed.command} (${mostUsed.count} times)`;
+      }
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      logger.error('User stats error:', error);
+      await bot.sendMessage(chatId, `❌ *Error fetching statistics*`, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  // NEW: SETTINGS/HELP command
+  bot.onText(/\/settings|\/help/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    const settingsMessage = `⚙️ *BOT SETTINGS & FEATURES*
+
+*🎯 All Working Commands:*
+/start - Welcome & command list
+/youtubers - Spicy YouTube drama 🎥
+/bollywood - Celebrity scandals 🎭
+/cricket - Sports controversies 🏏
+/national - Political drama 🇮🇳
+/pakistan - Pakistani conspiracy 🇵🇰
+/latest - Top scored content 🔥
+
+*🔍 Advanced Search:*
+/search <term> - Multi-platform search
+/spicy <term> - High controversy only (6+ spice)
+/conspiracy <term> - Hidden truths (5+ conspiracy)
+
+*🛠️ Keyword Management:*
+/addkeyword <category> <keyword> - Add custom
+/removekeyword <category> <keyword> - Remove
+/listkeywords - View all your keywords
+
+*📊 Analytics & Info:*
+/mystats - Your usage statistics
+/refresh - Force refresh all sources
+/settings or /help - This menu
+
+*📊 Content Scoring System:*
+🌶️ *Spice (1-10):* Drama, controversy, fights
+🕵️ *Conspiracy (1-10):* Secrets, exposés, truths
+⚡ *Importance (1-10):* Breaking, urgent news
+
+*🎬 Perfect for YouTube Channels!*
+✅ Multi-platform coverage (News→Twitter→Instagram→YouTube)
+✅ Working direct links (no broken URLs)
+✅ 24-hour fresh content only
+✅ Content scoring & ranking
+✅ Spam & inappropriate content filtering
+
+*💡 Pro Tips:*
+• Use /spicy for maximum drama content
+• Add keywords like "exposed", "scandal", "controversy"
+• Check /mystats to track your usage patterns
+• Use /latest for top-scored viral content`;
+
+    await bot.sendMessage(chatId, settingsMessage, { parse_mode: 'Markdown' });
+  }); 0) {
         const avgScore = freshNews.length > 0 ? Math.round(freshNews.reduce((sum, item) => sum + (item.totalScore || 0), 0) / freshNews.length) : 0;
         logger.info(`✅ Fresh search found ${freshNews.length} articles (avg score: ${avgScore})`);
         
@@ -1214,13 +2025,14 @@ if (bot) {
       const refreshStartTime = new Date();
       newsCache = [];
       
-      // Aggregate news from all categories
+      // Aggregate news from all categories with user keywords
       const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
       const allNews = [];
       
       for (const category of categories) {
         try {
-          const categoryNews = await fetchEnhancedContent(category);
+          logger.info(`🔄 Refreshing ${category} with user keywords...`);
+          const categoryNews = await fetchEnhancedContent(category, userId);
           allNews.push(...categoryNews);
           await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (error) {
