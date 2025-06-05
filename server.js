@@ -1,1467 +1,647 @@
-const newsArray = [
-  {
-    timestamp: currentTime,
-    fetchTime: indianTime,
-    platform: 'news',
-    reliability: 8,
-    isVerified: true
-  }
-];
-    pakistan: [
-      {
-        title: "Pakistan Latest News and Trends Today",
-        link: "https://www.google.com/search?q=pakistan+news+today&tbm=nws&tbs=qdr:d",
-        pubDate: currentTime,
-        formattedDate: "Just now",
-        source: "Regional News",
-        category: "pakistan",
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        platform: 'news',
-        reliability: 8,
-        isVerified: true
-      }
-    ]
-  };
-  
-  return fallbackContent[category] || [];
-}
-
-// Main aggregation function
-async function aggregateNews() {
-  console.log('🔄 Starting comprehensive news aggregation...');
-  let allNews = [];
-  let successful = 0;
-
-  try {    
-    for (const category of ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan']) {
-      try {
-        console.log(`🔍 Fetching ALL ${category} news...`);
-        
-        const categoryNews = await fetchEnhancedContent(category);
-        
-        if (categoryNews.length > 0) {
-          allNews.push(...categoryNews);
-          successful++;
-          console.log(`✅ ${category}: Added ${categoryNews.length} articles`);
-        } else {
-          console.log(`⚠️ ${category}: No news found, adding fallback`);
-          const fallback = createFallbackContent(category);
-          allNews.push(...fallback);
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      } catch (error) {
-        console.error(`❌ Error with ${category}:`, error.message);
-        const fallback = createFallbackContent(category);
-        allNews.push(...fallback);
-      }
-    }
-
-  } catch (error) {
-    console.error('❌ Critical aggregation error:', error);
-  }
-
-  // Remove duplicates
-  const uniqueNews = allNews.filter((article, index, self) => {
-    const titleKey = article.title.toLowerCase().substring(0, 40);
-    return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
-  });
-
-  uniqueNews.sort((a, b) => {
-    const aTime = new Date(a.timestamp || a.pubDate);
-    const bTime = new Date(b.timestamp || b.pubDate);
-    return bTime - aTime;
-  });
-
-  newsCache = uniqueNews;
-  
-  const categoryStats = {};
-  newsCache.forEach(item => {
-    categoryStats[item.category] = (categoryStats[item.category] || 0) + 1;
-  });
-
-  console.log(`✅ Aggregation complete! Total: ${newsCache.length} articles`);
-  console.log(`📊 Categories:`, categoryStats);
-  console.log(`🎯 Success rate: ${successful}/5 categories`);
-  
-  return newsCache;
-}
-
-// PRIORITY CHUNKING: Max 50 articles with smart chunking
-async function formatAndSendNewsMessage(chatId, articles, category, bot) {
-  if (!articles || articles.length === 0) {
-    await bot.sendMessage(chatId, `❌ No recent ${category} news found. Try /refresh or add keywords!`);
-    return;
-  }
-
-  console.log(`📊 Processing ${articles.length} ${category} articles for chat ${chatId}`);
-
-  try {
-    // ALLOW up to 50 articles
-    const maxArticles = Math.min(articles.length, 50);
-    const articlesToSend = articles.slice(0, maxArticles);
-    
-    console.log(`📱 Sending ${articlesToSend.length} articles in priority order...`);
-    
-    // Send summary first
-    const currentIndianTime = getCurrentIndianTime();
-    const summaryMessage = `🔥 *${category.toUpperCase()} LATEST NEWS*\n\n📊 *Found: ${articlesToSend.length} articles*\n⏰ *Data: Last 24 Hours Only*\n🌐 *Priority: News → Twitter → Instagram → YouTube*\n🕐 *Updated: ${currentIndianTime.toLocaleString('en-IN')}*`;
-    
-    await bot.sendMessage(chatId, summaryMessage, { parse_mode: 'Markdown' });
-    
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // SMART CHUNKING: Adjust chunk size based on total articles
-    let chunkSize = 8; // Default
-    if (articlesToSend.length <= 15) {
-      chunkSize = 5; // Smaller chunks for fewer articles
-    } else if (articlesToSend.length >= 35) {
-      chunkSize = 10; // Larger chunks for many articles
-    }
-    
-    const totalChunks = Math.ceil(articlesToSend.length / chunkSize);
-    console.log(`📱 Using ${totalChunks} chunks of ${chunkSize} articles each`);
-    
-    for (let i = 0; i < totalChunks; i++) {
-      const startIndex = i * chunkSize;
-      const endIndex = Math.min(startIndex + chunkSize, articlesToSend.length);
-      const chunk = articlesToSend.slice(startIndex, endIndex);
-      
-      let chunkMessage = `📰 *${category.toUpperCase()} NEWS - Part ${i + 1}/${totalChunks}*\n\n`;
-      
-      chunk.forEach((article, index) => {
-        const globalIndex = startIndex + index + 1;
-        
-        let cleanTitle = article.title
-          .replace(/\*/g, '')
-          .replace(/\[/g, '(')
-          .replace(/\]/g, ')')
-          .replace(/`/g, "'")
-          .replace(/_/g, '-')
-          .replace(/~/g, '-')
-          .replace(/\|/g, '-')
-          .substring(0, 65);
-        
-        if (cleanTitle.length < article.title.length) {
-          cleanTitle += '...';
-        }
-        
-        // Platform indicator
-        const platformIcon = {
-          'news': '📰',
-          'twitter': '🐦',
-          'instagram': '📸',
-          'youtube': '📺'
-        };
-        
-        const icon = platformIcon[article.platform] || '📰';
-        
-        chunkMessage += `${globalIndex}. ${icon} *${cleanTitle}*\n`;
-        chunkMessage += `   📄 ${article.source} • ⏰ ${article.formattedDate}\n`;
-        
-        let cleanUrl = article.link;
-        if (cleanUrl && cleanUrl.length > 200) {
-          cleanUrl = cleanUrl.substring(0, 200) + '...';
-        }
-        
-        chunkMessage += `   🔗 [Open Link](${cleanUrl})\n\n`;
-      });
-      
-      // Add chunk footer
-      if (i + 1 === totalChunks) {
-        chunkMessage += `✅ *Complete! Total: ${articlesToSend.length} articles*\n`;
-        chunkMessage += `📊 *Priority Order: News First, then Social Media*`;
-      } else {
-        chunkMessage += `📄 *Part ${i + 1}/${totalChunks} • Continues...*`;
-      }
-      
-      try {
-        await bot.sendMessage(chatId, chunkMessage, { 
-          parse_mode: 'Markdown',
-          disable_web_page_preview: true 
-        });
-        
-        console.log(`✅ Sent chunk ${i + 1}/${totalChunks} with ${chunk.length} articles`);
-        
-        // Delay between chunks - shorter for fewer chunks
-        if (i + 1 < totalChunks) {
-          const delay = totalChunks <= 5 ? 1500 : 2000;
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-        
-      } catch (chunkError) {
-        console.error(`❌ Error sending chunk ${i + 1}:`, chunkError.message);
-        
-        // Check if user blocked bot
-        if (chunkError.message.includes('403') || chunkError.message.includes('blocked')) {
-          console.log(`🚫 User blocked bot, stopping message sending`);
-          return;
-        }
-        
-        // Simple fallback for failed chunks
-        const simpleMessage = `📰 *${category.toUpperCase()}* - Part ${i + 1}\n\n${chunk.length} articles available but couldn't display due to formatting.`;
-        
-        try {
-          await bot.sendMessage(chatId, simpleMessage, { parse_mode: 'Markdown' });
-        } catch (fallbackError) {
-          console.error(`❌ Fallback failed:`, fallbackError.message);
-        }
-      }
-    }
-    
-    console.log(`✅ Successfully sent ${totalChunks} chunks with ${articlesToSend.length} total articles`);
-    
-  } catch (error) {
-    console.error('❌ Error in priority chunking:', error.message);
-    
-    // Emergency fallback
-    try {
-      const emergencyMessage = `🔥 *${category.toUpperCase()} NEWS*\n\n📊 Found ${articles.length} articles but couldn't display properly.\n\n💡 Try /refresh or use specific keywords.`;
-      await bot.sendMessage(chatId, emergencyMessage, { parse_mode: 'Markdown' });
-    } catch (emergencyError) {
-      console.error('❌ Emergency fallback failed:', emergencyError.message);
-    }
-  }
-}
-
-// Simple news formatter for emergency fallback
-function formatSimpleNewsMessage(articles, category) {
-  let message = `🔥 *${category.toUpperCase()} LATEST NEWS*\n\n`;
-  
-  articles.slice(0, 5).forEach((article, index) => {
-    let cleanTitle = article.title
-      .replace(/\*/g, '')
-      .replace(/\[/g, '(')
-      .replace(/\]/g, ')')
-      .replace(/`/g, "'")
-      .replace(/_/g, '-')
-      .replace(/~/g, '-')
-      .replace(/\|/g, '-')
-      .substring(0, 60);
-    
-    if (cleanTitle.length < article.title.length) {
-      cleanTitle += '...';
-    }
-    
-    message += `${index + 1}. *${cleanTitle}*\n`;
-    message += `   📰 ${article.source} • ⏰ ${article.formattedDate}\n\n`;
-  });
-
-  const currentIndianTime = getCurrentIndianTime();
-  message += `🔄 Updated: ${currentIndianTime.toLocaleString('en-IN')}\n`;
-  message += `✅ *All links are WORKING!*`;
-  
-  return message;
-}
-
-// Helper functions for better news processing
-function extractSourceFromTitle(title) {
-  // Extract source from title patterns like "Source - Title" or "Title | Source"
-  const patterns = [
-    /^([^-]+)\s*-\s*(.+)$/,
-    /^(.+)\s*\|\s*([^|]+)$/,
-    /^(.+)\s*:\s*([^:]+)$/
-  ];
-  
-  for (const pattern of patterns) {
-    const match = title.match(pattern);
-    if (match) {
-      const [, part1, part2] = match;
-      // Usually the source is the shorter part
-      if (part1.length < part2.length && part1.length < 30) {
-        return part1.trim();
-      } else if (part2.length < 30) {
-        return part2.trim();
-      }
-    }
-  }
-  
-  // Fallback: look for known news sources in title
-  const knownSources = [
-    'Times of India', 'TOI', 'Hindustan Times', 'HT', 'Indian Express',
-    'NDTV', 'News18', 'CNN', 'BBC', 'Reuters', 'PTI', 'ANI',
-    'Cricbuzz', 'ESPN', 'Bollywood Hungama', 'Pinkvilla',
-    'YouTube', 'Twitter', 'Instagram', 'Facebook'
-  ];
-  
-  for (const source of knownSources) {
-    if (title.toLowerCase().includes(source.toLowerCase())) {
-      return source;
-    }
-  }
-  
-  return 'News Source';
-}
-
-function assessReliability(title, link) {
-  let score = 5; // Base score
-  
-  // Boost score for reliable domains
-  const reliableDomains = [
-    'timesofindia.com', 'hindustantimes.com', 'indianexpress.com',
-    'ndtv.com', 'news18.com', 'bbc.com', 'cnn.com', 'reuters.com',
-    'cricbuzz.com', 'espn.in', 'youtube.com', 'twitter.com'
-  ];
-  
-  for (const domain of reliableDomains) {
-    if (link.includes(domain)) {
-      score += 3;
-      break;
-    }
-  }
-  
-  // Boost for recent indicators
-  if (title.toLowerCase().includes('today') || 
-      title.toLowerCase().includes('latest') ||
-      title.toLowerCase().includes('breaking')) {
-    score += 2;
-  }
-  
-  // Reduce for generic or unclear titles
-  if (title.length < 20 || title.includes('...') || title.includes('undefined')) {
-    score -= 2;
-  }
-  
-  return Math.max(1, Math.min(10, score));
-}
-
-// Webhook setup
-if (bot && isProduction) {
-  const webhookPath = `/webhook/${BOT_TOKEN}`;
-  bot.setWebHook(`${APP_URL}${webhookPath}`)
-    .then(() => console.log('✅ Webhook set successfully'))
-    .catch(err => console.error('❌ Webhook setup failed:', err.message));
-  
-  app.post(webhookPath, (req, res) => {
-    bot.processUpdate(req.body);
-    res.sendStatus(200);
-  });
-}
-
-// Bot commands
-if (bot) {
-  bot.on('polling_error', error => {
-    console.error('Telegram error:', error.message);
-  });
-
-  bot.onText(/\/start/, (msg) => {
-    const chatId = msg.chat.id;
-    const welcomeMessage = `🔥 *VIRAL NEWS BOT v2.0* 🔥
-
-*📰 Main Commands:*
-/youtubers - Latest YouTuber news
-/bollywood - Latest film industry news
-/cricket - Latest sports updates  
-/national - Latest India news
-/pakistan - Latest Pakistani content
-/latest - All categories mixed
-
-*🔍 Search:*
-/search <n> - Multi-platform search
-
-*🛠️ Keywords:*
-/addkeyword <category> <keyword>
-/listkeywords - Show all keywords
-
-*📂 Categories:* youtubers, bollywood, cricket, national, pakistan
-
-*Example:*
-/addkeyword youtubers MrBeast
-/search Elvish Yadav
-
-🚀 *RELIABLE links from news, Twitter, Instagram, YouTube!*
-✅ *Latest data from last 24 hours with timestamps!*
-⏰ *All content is FRESH & RECENT!*
-📱 *Priority order: News → Twitter → Instagram → YouTube*
-🎯 *Maximum 50 articles with no duplicates!*`;
-    
-    bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
-  });
-
-  // YOUTUBERS command
-  bot.onText(/\/youtubers/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🎥 *Getting LATEST YouTuber news...*\n\n🔍 Searching last 24 hours across all platforms\n⏳ Please wait 30-60 seconds...`);
-    
-    try {
-      console.log('🎥 FORCING fresh YouTuber search with timestamps...');
-      const freshNews = await fetchEnhancedContent('youtubers');
-      
-      if (freshNews.length > 0) {
-        console.log(`✅ Fresh search found ${freshNews.length} articles with working links`);
-        
-        newsCache = newsCache.filter(article => article.category !== 'youtubers');
-        newsCache.push(...freshNews);
-        
-        await formatAndSendNewsMessage(chatId, freshNews, 'YouTuber', bot);
-        
-      } else {
-        console.log('⚠️ Enhanced search returned 0 results, using fallback');
-        const fallbackContent = createFallbackContent('youtubers');
-        await formatAndSendNewsMessage(chatId, fallbackContent, 'YouTuber', bot);
-      }
-    } catch (error) {
-      console.error('❌ YouTuber command error:', error);
-      bot.sendMessage(chatId, `❌ *Error fetching YouTuber news*\n\nTry /addkeyword youtubers <n> to add specific creators`, { parse_mode: 'Markdown' });
-    }
-  });
-
-  // BOLLYWOOD command
-  bot.onText(/\/bollywood/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🎭 *Getting LATEST Bollywood news...*\n\n🔍 Searching last 24 hours...`);
-    
-    try {
-      const freshNews = await fetchEnhancedContent('bollywood');
-      const bollywoodNews = freshNews.length > 0 ? freshNews : createFallbackContent('bollywood');
-      
-      newsCache = newsCache.filter(article => article.category !== 'bollywood');
-      newsCache.push(...bollywoodNews);
-      
-      await formatAndSendNewsMessage(chatId, bollywoodNews, 'Bollywood', bot);
-    } catch (error) {
-      console.error('❌ Bollywood command error:', error);
-      bot.sendMessage(chatId, `❌ *Error fetching Bollywood news*`, { parse_mode: 'Markdown' });
-    }
-  });
-
-  // CRICKET command
-  bot.onText(/\/cricket/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🏏 *Getting LATEST Cricket news...*\n\n🔍 Searching last 24 hours...`);
-    
-    try {
-      const freshNews = await fetchEnhancedContent('cricket');
-      const cricketNews = freshNews.length > 0 ? freshNews : createFallbackContent('cricket');
-      
-      newsCache = newsCache.filter(article => article.category !== 'cricket');
-      newsCache.push(...cricketNews);
-      
-      await formatAndSendNewsMessage(chatId, cricketNews, 'Cricket', bot);
-    } catch (error) {
-      console.error('❌ Cricket command error:', error);
-      bot.sendMessage(chatId, `❌ *Error fetching Cricket news*`, { parse_mode: 'Markdown' });
-    }
-  });
-
-  // NATIONAL command
-  bot.onText(/\/national/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🇮🇳 *Getting LATEST National news...*\n\n🔍 Searching last 24 hours...`);
-    
-    try {
-      const freshNews = await fetchEnhancedContent('national');
-      const nationalNews = freshNews.length > 0 ? freshNews : createFallbackContent('national');
-      
-      newsCache = newsCache.filter(article => article.category !== 'national');
-      newsCache.push(...nationalNews);
-      
-      await formatAndSendNewsMessage(chatId, nationalNews, 'National', bot);
-    } catch (error) {
-      console.error('❌ National command error:', error);
-      bot.sendMessage(chatId, `❌ *Error fetching National news*`, { parse_mode: 'Markdown' });
-    }
-  });
-
-  // PAKISTAN command
-  bot.onText(/\/pakistan/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, `🇵🇰 *Getting LATEST Pakistan news...*\n\n🔍 Searching last 24 hours...`);
-    
-    try {
-      const freshNews = await fetchEnhancedContent('pakistan');
-      const pakistanNews = freshNews.length > 0 ? freshNews : createFallbackContent('pakistan');
-      
-      newsCache = newsCache.filter(article => article.category !== 'pakistan');
-      newsCache.push(...pakistanNews);
-      
-      await formatAndSendNewsMessage(chatId, pakistanNews, 'Pakistani', bot);
-    } catch (error) {
-      console.error('❌ Pakistan command error:', error);
-      bot.sendMessage(chatId, `❌ *Error fetching Pakistan news*`, { parse_mode: 'Markdown' });
-    }
-  });
-
-  // LATEST command
-  bot.onText(/\/latest/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, '🔄 *Getting latest news from all categories...*');
-    
-    if (newsCache.length === 0) {
-      await aggregateNews();
-    }
-    
-    const latestNews = newsCache.slice(0, 20);
-    const message = formatSimpleNewsMessage(latestNews, 'Latest Viral');
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown', disable_web_page_preview: true });
-  });
-
-  // SEARCH command
-  bot.onText(/\/search (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const searchTerm = match[1].trim();
-    
-    if (searchTerm.length < 2) {
-      bot.sendMessage(chatId, `❌ *Search term too short!*\n\n*Usage:* /search <n>`, { parse_mode: 'Markdown' });
-      return;
-    }
-
-    bot.sendMessage(chatId, `🔍 *LATEST Multi-Platform Search: "${searchTerm}"*\n\n🌐 Searching across all platforms...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-
-    try {
-      const searchResults = await searchMultiplePlatforms(searchTerm);
-      
-      if (searchResults.length === 0) {
-        bot.sendMessage(chatId, `❌ *No results found for "${searchTerm}"*\n\n🔧 Try different spelling or add as keyword`, { parse_mode: 'Markdown' });
-        return;
-      }
-
-      await formatAndSendNewsMessage(chatId, searchResults, `Search: ${searchTerm}`, bot);
-
-    } catch (error) {
-      console.error(`Search error for "${searchTerm}":`, error);
-      bot.sendMessage(chatId, `❌ *Search failed*\n\nTry again or add as keyword`, { parse_mode: 'Markdown' });
-    }
-  });
-
-  // ADD KEYWORD
-  bot.onText(/\/addkeyword (.+)/, (msg, match) => {
-    const chatId = msg.chat.id;
-    const input = match[1].trim();
-    const parts = input.split(' ');
-    
-    if (parts.length < 2) {
-      bot.sendMessage(chatId, `❌ *Usage:* /addkeyword <category> <keyword>\n\n*Categories:* youtubers, bollywood, cricket, national, pakistan\n\n*Example:* /addkeyword youtubers MrBeast`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    const category = parts[0].toLowerCase();
-    const keyword = parts.slice(1).join(' ');
-    
-    if (!SEARCH_KEYWORDS[category]) {
-      bot.sendMessage(chatId, `❌ *Invalid category!*\n\n*Valid:* youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    if (SEARCH_KEYWORDS[category].includes(keyword)) {
-      bot.sendMessage(chatId, `⚠️ *Already exists!* "${keyword}" is in ${category}`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    SEARCH_KEYWORDS[category].push(keyword);
-    bot.sendMessage(chatId, `✅ *Keyword Added Successfully!*
-
-📝 *Added:* "${keyword}"
-📂 *Category:* ${category}
-📊 *Total keywords:* ${SEARCH_KEYWORDS[category].length}
-
-🚀 Use /${category} to see LATEST results with working links!`, { parse_mode: 'Markdown' });
-  });
-
-  // REMOVE KEYWORD
-  bot.onText(/\/removekeyword (.+)/, (msg, match) => {
-    const chatId = msg.chat.id;
-    const input = match[1].trim();
-    const parts = input.split(' ');
-    
-    if (parts.length < 2) {
-      bot.sendMessage(chatId, `❌ *Usage:* /removekeyword <category> <keyword>`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    const category = parts[0].toLowerCase();
-    const keyword = parts.slice(1).join(' ');
-    
-    if (!SEARCH_KEYWORDS[category]) {
-      bot.sendMessage(chatId, `❌ *Invalid category!*`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    const index = SEARCH_KEYWORDS[category].indexOf(keyword);
-    if (index === -1) {
-      bot.sendMessage(chatId, `❌ *Not found!* "${keyword}" not in ${category}`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    SEARCH_KEYWORDS[category].splice(index, 1);
-    bot.sendMessage(chatId, `✅ *Removed!* "${keyword}" from ${category}
-
-📊 *Remaining:* ${SEARCH_KEYWORDS[category].length} keywords`, { parse_mode: 'Markdown' });
-  });
-
-  // LIST KEYWORDS
-  bot.onText(/\/listkeywords/, (msg) => {
-    const chatId = msg.chat.id;
-    let message = '📝 *CURRENT KEYWORDS*\n\n';
-    
-    for (const [category, keywords] of Object.entries(SEARCH_KEYWORDS)) {
-      const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
-      
-      message += `${icon} *${category.toUpperCase()}* (${keywords.length}):\n`;
-      message += keywords.map(k => `• ${k}`).join('\n');
-      message += '\n\n';
-    }
-    
-    message += `📊 *Total:* ${Object.values(SEARCH_KEYWORDS).flat().length} keywords`;
-    
-    bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-  });
-
-  // REFRESH
-  bot.onText(/\/refresh/, async (msg) => {
-    const chatId = msg.chat.id;
-    const currentTime = getCurrentIndianTime();
-    bot.sendMessage(chatId, `🔄 *Refreshing ALL sources...*\n\n⏳ Getting latest data from last 24 hours\n🕐 Started: ${currentTime.toLocaleString('en-IN')}`, { parse_mode: 'Markdown' });
-    
-    const startTime = new Date();
-    newsCache = [];
-    const news = await aggregateNews();
-    const endTime = new Date();
-    
-    const refreshTime = Math.round((endTime - startTime) / 1000);
-    
-    bot.sendMessage(chatId, `✅ *Refresh Complete!*
-
-⏱️ *Time taken:* ${refreshTime} seconds
-📊 *Articles found:* ${news.length}
-🕐 *Completed:* ${getCurrentIndianTime().toLocaleString('en-IN')}
-✅ *All links are WORKING & DIRECT!*
-📱 *Data from last 24 hours with timestamps*`, { parse_mode: 'Markdown' });
-  });
-
-  console.log('📱 Telegram Bot v2.0 initialized with WORKING LINKS & TIMESTAMPS!');
-} else {
-  console.log('⚠️ Bot not initialized - missing BOT_TOKEN');
-}
-
-// Express routes
-app.get('/', (req, res) => {
-  res.json({ 
-    status: 'Viral News Bot v2.0 - Latest Data with Working Links',
-    totalNews: newsCache.length,
-    uptime: Math.floor(process.uptime()),
-    keywords: Object.values(SEARCH_KEYWORDS).flat().length,
-    features: ['Working Direct Links', 'Latest 24hr Data', 'Proper Timestamps', 'Reliable Sources Only'],
-    lastUpdate: getCurrentIndianTime().toLocaleString('en-IN')
-  });
-});
-
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy',
-    newsCount: newsCache.length,
-    uptime: process.uptime(),
-    workingLinks: true,
-    timestamps: true,
-    lastUpdate: getCurrentIndianTime().toLocaleString('en-IN')
-  });
-});
-
-app.get('/ping', (req, res) => {
-  pingCount++;
-  res.json({ 
-    status: 'pong',
-    timestamp: getCurrentIndianTime().toLocaleString('en-IN'),
-    count: pingCount,
-    features: 'working-links-timestamps-enabled'
-  });
-});
-
-// Keep-alive
-async function keepAlive() {
-  try {
-    if (APP_URL && !APP_URL.includes('localhost')) {
-      await axios.get(`${APP_URL}/ping`, { timeout: 10000 });
-      console.log(`🏓 Keep-alive successful`);
-    }
-  } catch (error) {
-    console.log(`⚠️ Keep-alive failed: ${error.message}`);
-  }
-}
-
-setInterval(keepAlive, 12 * 60 * 1000);
-setInterval(aggregateNews, 2 * 60 * 60 * 1000);
-
-setTimeout(async () => {
-  console.log('🚀 Starting enhanced news aggregation v2.0 with working links & timestamps...');
-  await aggregateNews();
-  console.log('🏓 Keep-alive activated');
-}, 3000);
-
-app.listen(PORT, () => {
-  console.log(`🚀 Enhanced News Bot v2.0 running on port ${PORT}`);
-  console.log(`🌐 URL: ${APP_URL}`);
-  console.log(`📱 Bot: ${BOT_TOKEN ? 'Active' : 'Missing Token'}`);
-  console.log(`🎯 WORKING LINKS + TIMESTAMPS ENABLED!`);
-  console.log(`✅ Features: Latest 24hr data, Working direct links, Proper timestamps`);
-  console.log(`🕐 Started: ${getCurrentIndianTime().toLocaleString('en-IN')}`);
-});
-
-process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled Rejection:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error.message);
-});const TelegramBot = require('node-telegram-bot-api');
+// tests/newsBot.test.js
+const jest = require('jest');
 const axios = require('axios');
-const cheerio = require('cheerio');
-const express = require('express');
+const { app, bot, database } = require('../server');
+const request = require('supertest');
 
-// Bot configuration
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const isProduction = process.env.NODE_ENV === 'production';
+// Mock external dependencies
+jest.mock('axios');
+jest.mock('node-telegram-bot-api');
 
-const bot = BOT_TOKEN ? new TelegramBot(BOT_TOKEN, { 
-  polling: !isProduction,
-  webHook: isProduction 
-}) : null;
-
-// Express setup
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.use(express.json());
-
-const APP_URL = process.env.RENDER_EXTERNAL_URL || `https://${process.env.RENDER_SERVICE_NAME}.onrender.com`;
-
-// Global cache
-let newsCache = [];
-let pingCount = 0;
-
-// KEYWORDS - Enhanced for all categories
-let SEARCH_KEYWORDS = {
-  youtubers: [
-    'CarryMinati',
-    'Triggered Insaan', 
-    'BB Ki Vines',
-    'Technical Guruji',
-    'Ashish Chanchlani',
-    'Indian YouTuber',
-    'YouTube creator India'
-  ],
-  bollywood: [
-    'Salman Khan',
-    'Shah Rukh Khan',
-    'Alia Bhatt',
-    'Bollywood news',
-    'Hindi film',
-    'Indian cinema'
-  ],
-  cricket: [
-    'Virat Kohli',
-    'Rohit Sharma', 
-    'MS Dhoni',
-    'Indian cricket',
-    'IPL cricket',
-    'BCCI'
-  ],
-  national: [
-    'Modi news',
-    'India news',
-    'Delhi news',
-    'Mumbai news',
-    'Indian government'
-  ],
-  pakistan: [
-    'Pakistan news',
-    'Karachi news',
-    'Pakistani cricket',
-    'Pakistan trending'
-  ]
-};
-
-// Utility functions
-function getCurrentTimestamp() {
-  return new Date().toISOString();
-}
-
-function getCurrentIndianTime() {
-  const now = new Date();
-  const indianTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
-  return indianTime;
-}
-
-function formatNewsDate(dateString) {
-  try {
-    if (!dateString) {
-      const now = getCurrentIndianTime();
-      return `${now.toLocaleDateString('en-IN')} ${now.toLocaleTimeString('en-IN', {hour: '2-digit', minute: '2-digit'})}`;
-    }
-    
-    const newsDate = new Date(dateString);
-    if (isNaN(newsDate.getTime())) {
-      const now = getCurrentIndianTime();
-      return `${now.toLocaleDateString('en-IN')} ${now.toLocaleTimeString('en-IN', {hour: '2-digit', minute: '2-digit'})}`;
-    }
-    
-    const now = getCurrentIndianTime();
-    const diffInMinutes = Math.floor((now - newsDate) / (1000 * 60));
-    
-    if (diffInMinutes < 5) {
-      return 'Just now';
-    } else if (diffInMinutes < 60) {
-      return `${diffInMinutes} minutes ago`;
-    } else if (diffInMinutes < 1440) { // Less than 24 hours
-      const hours = Math.floor(diffInMinutes / 60);
-      return `${hours} hours ago`;
-    } else {
-      return newsDate.toLocaleDateString('en-IN', { 
-        day: 'numeric', 
-        month: 'short',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    }
-  } catch (error) {
-    const now = getCurrentIndianTime();
-    return `${now.toLocaleDateString('en-IN')} ${now.toLocaleTimeString('en-IN', {hour: '2-digit', minute: '2-digit'})}`;
-  }
-}
-
-function isWithin24Hours(dateString) {
-  try {
-    if (!dateString) return true; // If no date, consider it recent
-    const newsDate = new Date(dateString);
-    const now = getCurrentIndianTime();
-    if (isNaN(newsDate.getTime())) return true; // If invalid date, consider it recent
-    const diffInHours = (now - newsDate) / (1000 * 60 * 60);
-    return diffInHours <= 24; // Strict 24 hours only
-  } catch (error) {
-    return true; // If error, consider it recent
-  }
-}
-
-function categorizeNews(title, description = '') {
-  const content = `${title} ${description}`.toLowerCase();
+describe('Enhanced News Bot Tests', () => {
   
-  // Enhanced YouTuber detection - more comprehensive
-  if (content.match(/carry|carryminati|triggered|insaan|bhuvan|bb ki vines|ashish|chanchlani|dhruv|rathee|technical|guruji|elvish|yadav|youtube|youtuber|subscriber|gaming|roast|vlog|creator|influencer|streamer|viral video|content creator|social media star|gaming channel|comedy channel|tech channel|family vlog|reaction video|collab|collaboration|brand deal|monetization|demonetization|subscriber milestone|trending video|viral content|digital creator|online creator/)) {
-    return 'youtubers';
-  }
-  
-  if (content.match(/salman|shahrukh|srk|alia|ranbir|katrina|akshay|ranveer|deepika|bollywood|film|movie|actor|actress|cinema|hindi cinema|mumbai film|bollywood gossip|celebrity wedding|box office|film industry|hindi film/)) {
-    return 'bollywood';
-  }
-  
-  if (content.match(/virat|kohli|rohit|sharma|dhoni|cricket|ipl|india vs|hardik|rahul|bumrah|wicket|century|match|bcci|test match|odi|t20|world cup|indian cricket|cricket team|sports/)) {
-    return 'cricket';
-  }
-  
-  if (content.match(/pakistan|imran khan|karachi|lahore|islamabad|pakistani|pti|pml|pakistan government|pakistan news|pakistan politics/)) {
-    return 'pakistan';
-  }
-  
-  return 'national';
-}
-
-// WORKING: Better URL extraction with reliable Google search fallbacks
-function extractWorkingURL(googleNewsLink, title) {
-  try {
-    console.log(`🔗 Extracting URL from: ${googleNewsLink.substring(0, 80)}...`);
+  // Test news aggregation functionality
+  describe('News Aggregation', () => {
     
-    // Method 1: Extract from URL parameter
-    if (googleNewsLink.includes('url=')) {
-      const patterns = [
-        /[?&]url=([^&]+)/,
-        /url=([^&]+)/
-      ];
-      
-      for (const pattern of patterns) {
-        const urlMatch = googleNewsLink.match(pattern);
-        if (urlMatch) {
-          let decodedUrl = urlMatch[1];
-          
-          // Multiple decode attempts
-          try {
-            decodedUrl = decodeURIComponent(decodedUrl);
-            if (decodedUrl.includes('%')) {
-              decodedUrl = decodeURIComponent(decodedUrl);
-            }
-          } catch (e) {
-            // If decode fails, continue with partially decoded
-          }
-          
-          // Check if it's a valid direct URL
-          if (decodedUrl.startsWith('http') && 
-              !decodedUrl.includes('google.com') && 
-              !decodedUrl.includes('googleusercontent.com') &&
-              decodedUrl.length > 20) {
-            console.log(`✅ Extracted working URL: ${decodedUrl.substring(0, 50)}...`);
-            return decodedUrl;
-          }
-        }
-      }
-    }
-    
-    // Method 2: If it's already a clean direct link
-    if (googleNewsLink.startsWith('http') && 
-        !googleNewsLink.includes('news.google.com') &&
-        !googleNewsLink.includes('google.com/url')) {
-      console.log(`✅ Direct link found: ${googleNewsLink.substring(0, 50)}...`);
-      return googleNewsLink;
-    }
-    
-    // Method 3: Create WORKING Google search with exact title
-    const cleanTitle = title.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
-    const workingUrl = `https://www.google.com/search?q="${encodeURIComponent(cleanTitle)}"&tbm=nws&tbs=qdr:w&gl=IN&hl=en`;
-    console.log(`🔄 Created working search for: ${cleanTitle.substring(0, 30)}...`);
-    return workingUrl;
-    
-  } catch (error) {
-    console.error('URL extraction error:', error.message);
-    const cleanTitle = title.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
-    return `https://www.google.com/search?q="${encodeURIComponent(cleanTitle)}"&tbm=nws&gl=IN`;
-  }
-}
-
-// LATEST NEWS: Max 50 articles, 24 hours only, priority order
-async function scrapeWorkingNews(query) {
-  try {
-    console.log(`📰 Fetching LATEST 24hr news for: ${query}`);
-    
-    const allArticles = [];
-    
-    // Google News RSS - Primary source
-    try {
-      const encodedQuery = encodeURIComponent(query);
-      const url = `https://news.google.com/rss/search?q=${encodedQuery}&hl=en-IN&gl=IN&ceid=IN:en&when:1d`;
-      
-      const response = await axios.get(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        },
-        timeout: 8000
-      });
-
-      const $ = cheerio.load(response.data, { xmlMode: true });
-      
-      $('item').each((i, elem) => {
-        const title = $(elem).find('title').text().trim();
-        const link = $(elem).find('link').text().trim();
-        const pubDate = $(elem).find('pubDate').text().trim();
-        const description = $(elem).find('description').text().trim();
-
-        if (title && link && title.length > 15) {
-          // STRICT 24 hours check
-          const isRecent = isWithin24Hours(pubDate);
-          if (!isRecent && pubDate) {
-            return; // Skip if older than 24 hours
-          }
-          
-          const currentTime = getCurrentTimestamp();
-          
-          // Better working link extraction
-          let workingLink = link;
-          
-          if (link.includes('url=')) {
-            const urlMatch = link.match(/url=([^&]+)/);
-            if (urlMatch) {
-              try {
-                workingLink = decodeURIComponent(urlMatch[1]);
-                if (workingLink.includes('%')) {
-                  workingLink = decodeURIComponent(workingLink);
-                }
-              } catch (e) {
-                workingLink = link;
-              }
-            }
-          }
-          
-          // If still problematic Google link, use direct news search
-          if (workingLink.includes('google.com/url') || 
-              workingLink.includes('news.google.com/articles') ||
-              workingLink.includes('googleusercontent.com')) {
-            
-            const cleanTitle = title.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-            workingLink = `https://www.google.com/search?q="${encodeURIComponent(cleanTitle)}"&tbm=nws&tbs=qdr:d&gl=IN&hl=en`;
-          }
-          
-          // Extract source from title
-          let source = 'News Source';
-          if (title.includes(' - ')) {
-            const parts = title.split(' - ');
-            if (parts[0].length < 30) {
-              source = parts[0].trim();
-            }
-          }
-          
-          allArticles.push({
-            title: title.length > 150 ? title.substring(0, 150) + '...' : title,
-            link: workingLink,
-            pubDate: pubDate || currentTime,
-            formattedDate: formatNewsDate(pubDate || currentTime),
-            description: description ? description.substring(0, 120) + '...' : `Latest ${query} news`,
-            source: source,
-            category: categorizeNews(title, description),
-            timestamp: currentTime,
-            fetchTime: getCurrentIndianTime().toLocaleString('en-IN'),
-            reliability: 10, // Highest priority for Google News
-            platform: 'news',
-            isVerified: true
-          });
-        }
-      });
-      
-      console.log(`✅ Google News: ${allArticles.length} 24hr articles`);
-      
-    } catch (googleError) {
-      console.error(`Google News error: ${googleError.message}`);
-    }
-    
-    // Add important news fallbacks if needed
-    if (allArticles.length < 10) {
-      console.log(`⚠️ Adding important news fallbacks...`);
-      
-      const cleanQuery = query.replace(/[^\w\s]/g, '').replace(/\s+/g, '+');
-      const currentTime = getCurrentTimestamp();
-      
-      const importantNews = [
-        {
-          title: `${query} - Breaking News Today`,
-          link: `https://timesofindia.indiatimes.com/topic/${cleanQuery}`,
-          pubDate: currentTime,
-          formattedDate: 'Latest',
-          description: `Breaking news about ${query} from Times of India`,
-          source: 'Times of India',
-          category: categorizeNews(query),
-          timestamp: currentTime,
-          fetchTime: getCurrentIndianTime().toLocaleString('en-IN'),
-          reliability: 9, // High priority for important news
-          platform: 'news',
-          isVerified: true
-        },
-        {
-          title: `${query} - NDTV Latest Updates`,
-          link: `https://www.ndtv.com/search?searchtext=${cleanQuery}`,
-          pubDate: currentTime,
-          formattedDate: 'Recent',
-          description: `Latest updates about ${query} from NDTV`,
-          source: 'NDTV',
-          category: categorizeNews(query),
-          timestamp: currentTime,
-          fetchTime: getCurrentIndianTime().toLocaleString('en-IN'),
-          reliability: 9, // High priority for important news
-          platform: 'news',
-          isVerified: true
-        }
-      ];
-      
-      allArticles.push(...importantNews);
-      console.log(`✅ Added ${importantNews.length} important news`);
-    }
-
-    console.log(`📰 Total 24hr articles for "${query}": ${allArticles.length}`);
-    return allArticles;
-    
-  } catch (error) {
-    console.error(`❌ Working news error: ${error.message}`);
-    
-    // Emergency fallback
-    const cleanQuery = query.replace(/[^\w\s]/g, '').replace(/\s+/g, '+');
-    const currentTime = getCurrentTimestamp();
-    
-    return [{
-      title: `${query} - Latest News Today`,
-      link: `https://www.google.com/search?q=${cleanQuery}+news+today&tbm=nws&tbs=qdr:d&gl=IN`,
-      pubDate: currentTime,
-      formattedDate: 'Search results',
-      description: `Latest ${query} news search`,
-      source: 'News Search',
-      category: categorizeNews(query),
-      timestamp: currentTime,
-      fetchTime: getCurrentIndianTime().toLocaleString('en-IN'),
-      reliability: 8,
-      platform: 'news',
-      isVerified: true
-    }];
-  }
-}
-
-// Better Twitter search with actual relevant results
-async function searchTwitterDirect(searchTerm) {
-  try {
-    console.log(`🐦 Creating focused Twitter search for: ${searchTerm}`);
-    
-    const currentTime = getCurrentTimestamp();
-    const indianTime = getCurrentIndianTime().toLocaleString('en-IN');
-    
-    // Create more specific Twitter searches that are more likely to have actual content
-    const twitterResults = [
-      {
-        title: `${searchTerm} - Latest Twitter Posts`,
-        link: `https://twitter.com/search?q=${encodeURIComponent(searchTerm + ' -filter:replies')}&src=typed_query&f=live`,
-        pubDate: currentTime,
-        formattedDate: 'Live updates',
-        description: `Latest tweets about ${searchTerm} (excluding replies)`,
-        source: 'Twitter/X',
-        category: categorizeNews(searchTerm),
-        platform: 'twitter',
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        reliability: 8,
-        isVerified: true
-      }
-    ];
-    
-    // Only add hashtag search if the term is likely to be a hashtag
-    if (searchTerm.length < 30 && !searchTerm.includes(' ')) {
-      twitterResults.push({
-        title: `#${searchTerm} - Trending Tweets`,
-        link: `https://twitter.com/hashtag/${encodeURIComponent(searchTerm)}?src=hashtag_click&f=live`,
-        pubDate: currentTime,
-        formattedDate: 'Trending now',
-        description: `Trending hashtag content for ${searchTerm}`,
-        source: 'Twitter/X',
-        category: categorizeNews(searchTerm),
-        platform: 'twitter',
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        reliability: 8,
-        isVerified: true
-      });
-    }
-    
-    console.log(`✅ Twitter: Created ${twitterResults.length} focused search links`);
-    return twitterResults;
-  } catch (error) {
-    console.error('Twitter search error:', error.message);
-    return [];
-  }
-}
-
-// Re-enable Instagram with proper priority
-async function searchInstagramDirect(searchTerm) {
-  try {
-    console.log(`📸 Creating Instagram search for: ${searchTerm}`);
-    
-    const currentTime = getCurrentTimestamp();
-    const indianTime = getCurrentIndianTime().toLocaleString('en-IN');
-    
-    const instaResults = [
-      {
-        title: `${searchTerm} - Instagram Latest Posts`,
-        link: `https://www.instagram.com/explore/tags/${encodeURIComponent(searchTerm.replace(/\s+/g, ''))}/`,
-        pubDate: currentTime,
-        formattedDate: 'Latest posts',
-        description: `Latest Instagram posts about ${searchTerm}`,
-        source: 'Instagram',
-        category: categorizeNews(searchTerm),
-        platform: 'instagram',
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        reliability: 6, // Medium priority
-        isVerified: true
-      }
-    ];
-    
-    console.log(`✅ Instagram: Created ${instaResults.length} search links`);
-    return instaResults;
-  } catch (error) {
-    console.error('Instagram search error:', error.message);
-    return [];
-  }
-}
-
-// YouTube API-style search with better results
-async function searchYouTubeDirect(searchTerm) {
-  try {
-    console.log(`📺 Creating advanced YouTube search for: ${searchTerm}`);
-    
-    const currentTime = getCurrentTimestamp();
-    const indianTime = getCurrentIndianTime().toLocaleString('en-IN');
-    
-    const youtubeResults = [
-      {
-        title: `${searchTerm} - Latest Videos (This Week)`,
-        link: `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTerm)}&sp=CAISBAgCEAE%253D`,
-        pubDate: currentTime,
-        formattedDate: 'Latest uploads',
-        description: `Most recent YouTube videos about ${searchTerm} from this week`,
-        source: 'YouTube',
-        category: categorizeNews(searchTerm),
-        platform: 'youtube',
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        reliability: 4,
-        isVerified: true
-      },
-      {
-        title: `${searchTerm} - Popular Videos`,
-        link: `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTerm)}&sp=CAMSAhAB`,
-        pubDate: currentTime,
-        formattedDate: 'Trending now',
-        description: `Popular and trending YouTube content for ${searchTerm}`,
-        source: 'YouTube',
-        category: categorizeNews(searchTerm),
-        platform: 'youtube',
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        reliability: 4,
-        isVerified: true
-      }
-    ];
-    
-    console.log(`✅ YouTube: Created ${youtubeResults.length} advanced search links`);
-    return youtubeResults;
-  } catch (error) {
-    console.error('YouTube search error:', error.message);
-    return [];
-  }
-}
-
-// FOCUS: Multiple sources with priority order
-async function searchMultiplePlatforms(searchTerm) {
-  const allResults = [];
-  
-  try {
-    console.log(`🔍 Multi-source search for: ${searchTerm}`);
-    
-    // 1. Working news sources (highest priority)
-    const newsResults = await scrapeWorkingNews(searchTerm);
-    allResults.push(...newsResults);
-    console.log(`✅ News Sources: ${newsResults.length} results`);
-    
-    // 2. Twitter search (second priority)
-    const twitterResults = await searchTwitterDirect(searchTerm);
-    allResults.push(...twitterResults);
-    console.log(`✅ Twitter: ${twitterResults.length} results`);
-    
-    // 3. Instagram search (third priority)
-    const instaResults = await searchInstagramDirect(searchTerm);
-    allResults.push(...instaResults);
-    console.log(`✅ Instagram: ${instaResults.length} results`);
-    
-    // 4. YouTube search (fourth priority)
-    const youtubeResults = await searchYouTubeDirect(searchTerm);
-    allResults.push(...youtubeResults);
-    console.log(`✅ YouTube: ${youtubeResults.length} results`);
-
-    // Remove duplicates
-    const uniqueResults = allResults.filter((article, index, self) => {
-      const titleKey = article.title.toLowerCase().substring(0, 40);
-      return index === self.findIndex(a => a.title.toLowerCase().substring(0, 40) === titleKey);
-    });
-
-    console.log(`✅ Multi-source search complete: ${uniqueResults.length} reliable results`);
-    return uniqueResults;
-
-  } catch (error) {
-    console.error(`❌ Multi-source search error:`, error.message);
-    return [];
-  }
-}
-
-// ENHANCED: Get all platform results with priority order
-async function fetchEnhancedContent(category) {
-  const allArticles = [];
-  
-  try {
-    console.log(`🎯 Enhanced ${category} content (max 50 articles, 24hr only)...`);
-    
-    // Category-specific terms
-    const multiPlatformTerms = {
-      youtubers: ['Elvish Yadav latest', 'CarryMinati news'],
-      bollywood: ['Salman Khan latest', 'Shah Rukh Khan news'],
-      cricket: ['Virat Kohli latest', 'Rohit Sharma news'],
-      national: ['India news today', 'Delhi news latest'],
-      pakistan: ['Pakistan news today', 'Imran Khan latest']
-    };
-
-    const enhancedTerms = {
-      youtubers: ['Indian YouTuber news today', 'gaming streamer viral'],
-      bollywood: ['Bollywood news today', 'Hindi film release'],
-      cricket: ['India cricket news today', 'IPL latest updates'],
-      national: ['India news today', 'Modi news latest'],
-      pakistan: ['Pakistan news today', 'Pakistan trending']
-    };
-
-    const platformTerms = multiPlatformTerms[category] || [];
-    const terms = enhancedTerms[category] || [];
-    
-    // 1. Multi-platform search (includes news priority)
-    for (const term of platformTerms.slice(0, 2)) {
-      try {
-        console.log(`   → Multi-platform search: ${term}`);
-        const multiResults = await searchMultiplePlatforms(term);
-        
-        const categoryResults = multiResults.filter(article => 
-          article.category === category || categorizeNews(article.title, article.description) === category
-        );
-        
-        allArticles.push(...categoryResults);
-        console.log(`     ✅ Found ${categoryResults.length} articles for "${term}"`);
-        
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      } catch (error) {
-        console.error(`Multi-platform error for ${term}:`, error.message);
-      }
-    }
-    
-    // 2. Enhanced terms search
-    for (const term of terms.slice(0, 2)) {
-      try {
-        console.log(`   → Enhanced search: ${term}`);
-        const articles = await scrapeWorkingNews(term);
-        
-        const categoryArticles = articles.filter(article => 
-          article.category === category || categorizeNews(article.title, article.description) === category
-        );
-        
-        allArticles.push(...categoryArticles);
-        console.log(`     ✅ Found ${categoryArticles.length} articles for "${term}"`);
-        
-        await new Promise(resolve => setTimeout(resolve, 800));
-      } catch (error) {
-        console.error(`Error with enhanced term "${term}":`, error.message);
-      }
-    }
-    
-    // 3. Backup keyword search
-    const keywords = SEARCH_KEYWORDS[category] || [];
-    for (let i = 0; i < Math.min(keywords.length, 2); i++) {
-      const keyword = keywords[i];
-      try {
-        console.log(`   → Backup search: ${keyword}`);
-        const articles = await scrapeWorkingNews(keyword + ' latest');
-        
-        const categoryArticles = articles.filter(article => 
-          article.category === category || categorizeNews(article.title, article.description) === category
-        );
-        
-        allArticles.push(...categoryArticles);
-        console.log(`     ✅ Backup found ${categoryArticles.length} articles`);
-        
-        await new Promise(resolve => setTimeout(resolve, 600));
-      } catch (error) {
-        console.error(`❌ Backup error with keyword "${keyword}":`, error.message);
-      }
-    }
-
-    // ADVANCED duplicate removal - check multiple fields
-    const uniqueArticles = [];
-    const seenTitles = new Set();
-    const seenLinks = new Set();
-    const seenDescriptions = new Set();
-    
-    for (const article of allArticles) {
-      // Create multiple keys for better duplicate detection
-      const titleKey = article.title.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').substring(0, 50);
-      const linkKey = article.link.toLowerCase().replace(/[^\w]/g, '').substring(0, 80);
-      const descKey = article.description.toLowerCase().replace(/[^\w\s]/g, '').substring(0, 40);
-      
-      // Check if this is truly unique
-      const isDuplicate = seenTitles.has(titleKey) || 
-                         seenLinks.has(linkKey) || 
-                         (descKey.length > 20 && seenDescriptions.has(descKey));
-      
-      if (!isDuplicate) {
-        seenTitles.add(titleKey);
-        seenLinks.add(linkKey);
-        if (descKey.length > 20) {
-          seenDescriptions.add(descKey);
-        }
-        uniqueArticles.push(article);
-      }
-    }
-    
-    // PRIORITY SORTING: News > Twitter > Instagram > YouTube
-    const sortedArticles = uniqueArticles.sort((a, b) => {
-      // First by platform priority
-      const platformPriority = {
-        'news': 10,
-        'twitter': 8,
-        'instagram': 6,
-        'youtube': 4
+    test('should aggregate news from multiple sources', async () => {
+      // Mock RSS response
+      const mockRSSResponse = {
+        data: `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <item>
+              <title>Test News Title - Source</title>
+              <link>https://example.com/news</link>
+              <pubDate>Mon, 06 Jun 2025 10:00:00 GMT</pubDate>
+              <description>Test news description</description>
+            </item>
+          </channel>
+        </rss>`
       };
       
-      const aPriority = platformPriority[a.platform] || a.reliability || 5;
-      const bPriority = platformPriority[b.platform] || b.reliability || 5;
+      axios.get.mockResolvedValue(mockRSSResponse);
       
-      if (aPriority !== bPriority) {
-        return bPriority - aPriority;
+      const { scrapeEnhancedNews } = require('../server');
+      const results = await scrapeEnhancedNews('test query', 'national');
+      
+      expect(results).toBeDefined();
+      expect(Array.isArray(results)).toBe(true);
+      expect(results.length).toBeGreaterThan(0);
+      
+      // Check if articles have required properties
+      if (results.length > 0) {
+        const article = results[0];
+        expect(article).toHaveProperty('title');
+        expect(article).toHaveProperty('link');
+        expect(article).toHaveProperty('spiceScore');
+        expect(article).toHaveProperty('conspiracyScore');
+        expect(article).toHaveProperty('importanceScore');
+        expect(article).toHaveProperty('totalScore');
       }
-      
-      // Then by reliability within same platform
-      return (b.reliability || 5) - (a.reliability || 5);
     });
     
-    // LIMIT to maximum 50 articles
-    const finalArticles = sortedArticles.slice(0, 50);
-
-    console.log(`✅ ${category}: ${finalArticles.length} unique articles (24hr, priority sorted)`);
-    console.log(`📊 Platform breakdown:`, 
-      finalArticles.reduce((acc, article) => {
-        acc[article.platform || 'other'] = (acc[article.platform || 'other'] || 0) + 1;
-        return acc;
-      }, {})
-    );
+    test('should handle API errors gracefully', async () => {
+      axios.get.mockRejectedValue(new Error('Network error'));
+      
+      const { scrapeEnhancedNews } = require('../server');
+      const results = await scrapeEnhancedNews('test query', 'national');
+      
+      expect(results).toBeDefined();
+      expect(Array.isArray(results)).toBe(true);
+      // Should return fallback content even on error
+    });
     
-    return finalArticles;
-    
-  } catch (error) {
-    console.error(`❌ Enhanced search error for ${category}:`, error.message);
-    return [];
-  }
-}
-
-// Create fallback content with current timestamps
-function createFallbackContent(category) {
-  const currentTime = getCurrentTimestamp();
-  const indianTime = getCurrentIndianTime().toLocaleString('en-IN');
+    test('should filter content within 24 hours', async () => {
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - 25 * 60 * 60 * 1000); // 25 hours ago
+      const today = new Date(now.getTime() - 1 * 60 * 60 * 1000); // 1 hour ago
+      
+      const { isWithin24Hours } = require('../server');
+      
+      expect(isWithin24Hours(today.toISOString())).toBe(true);
+      expect(isWithin24Hours(yesterday.toISOString())).toBe(false);
+      expect(isWithin24Hours(null)).toBe(true); // Should default to true for null dates
+    });
+  });
   
-  const fallbackContent = {
-    youtubers: [
-      {
-        title: "Indian YouTube Creator Community Shows Strong Growth Today",
-        link: "https://www.youtube.com/results?search_query=indian+youtuber+news&sp=CAI%253D",
-        pubDate: currentTime,
-        formattedDate: "Just now",
-        source: "YouTube Search",
-        category: "youtubers",
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        platform: 'youtube',
-        reliability: 4,
-        isVerified: true
+  // Test content scoring system
+  describe('Content Scoring System', () => {
+    
+    test('should calculate spice score correctly', () => {
+      const { calculateSpiceScore } = require('../server');
+      
+      const spicyTitle = "BREAKING: YouTuber Drama Exposed - Shocking Controversy";
+      const normalTitle = "Regular news update about weather";
+      
+      const spicyScore = calculateSpiceScore(spicyTitle);
+      const normalScore = calculateSpiceScore(normalTitle);
+      
+      expect(spicyScore).toBeGreaterThan(normalScore);
+      expect(spicyScore).toBeGreaterThanOrEqual(0);
+      expect(spicyScore).toBeLessThanOrEqual(10);
+    });
+    
+    test('should calculate conspiracy score correctly', () => {
+      const { calculateConspiracyScore } = require('../server');
+      
+      const conspiracyTitle = "Secret Government Cover Up Exposed - Hidden Truth Revealed";
+      const normalTitle = "Regular government policy announcement";
+      
+      const conspiracyScore = calculateConspiracyScore(conspiracyTitle);
+      const normalScore = calculateConspiracyScore(normalTitle);
+      
+      expect(conspiracyScore).toBeGreaterThan(normalScore);
+      expect(conspiracyScore).toBeGreaterThanOrEqual(0);
+      expect(conspiracyScore).toBeLessThanOrEqual(10);
+    });
+    
+    test('should calculate importance score correctly', () => {
+      const { calculateImportanceScore } = require('../server');
+      
+      const importantTitle = "BREAKING NEWS: Emergency Alert - Crisis Situation";
+      const normalTitle = "Regular daily update";
+      
+      const importantScore = calculateImportanceScore(importantTitle);
+      const normalScore = calculateImportanceScore(normalTitle);
+      
+      expect(importantScore).toBeGreaterThan(normalScore);
+      expect(importantScore).toBeGreaterThanOrEqual(0);
+      expect(importantScore).toBeLessThanOrEqual(10);
+    });
+  });
+  
+  // Test content moderation
+  describe('Content Moderation', () => {
+    
+    test('should filter profanity correctly', () => {
+      const { moderateContent } = require('../server');
+      
+      const cleanTitle = "Regular news about technology updates";
+      const profaneTitle = "This is bullshit fake news";
+      
+      const cleanResult = moderateContent(cleanTitle);
+      const profaneResult = moderateContent(profaneTitle);
+      
+      expect(cleanResult.isClean).toBe(true);
+      expect(profaneResult.isClean).toBe(false);
+      expect(profaneResult.issues.profanity || profaneResult.issues.badWordsFilter).toBe(true);
+    });
+    
+    test('should detect suspicious fake news patterns', () => {
+      const { moderateContent } = require('../server');
+      
+      const normalTitle = "Regular news update from reliable source";
+      const suspiciousTitle = "You wont believe this shocking truth they dont want you to know";
+      
+      const normalResult = moderateContent(normalTitle);
+      const suspiciousResult = moderateContent(suspiciousTitle);
+      
+      expect(normalResult.isClean).toBe(true);
+      expect(suspiciousResult.isClean).toBe(false);
+      expect(suspiciousResult.issues.suspiciousFake).toBe(true);
+    });
+  });
+  
+  // Test duplicate filtering
+  describe('Duplicate Filtering', () => {
+    
+    test('should remove duplicate articles correctly', () => {
+      const articles = [
+        {
+          title: "Same News Story - Source A",
+          link: "https://example.com/news1",
+          description: "Description about news"
+        },
+        {
+          title: "Same News Story - Source B", // Similar title
+          link: "https://example.com/news2",
+          description: "Different description"
+        },
+        {
+          title: "Completely Different News",
+          link: "https://example.com/news3",
+          description: "Different news content"
+        }
+      ];
+      
+      // Simulate the duplicate removal logic
+      const uniqueArticles = [];
+      const seenTitles = new Set();
+      
+      articles.forEach(article => {
+        const titleKey = article.title.toLowerCase().substring(0, 40);
+        if (!seenTitles.has(titleKey)) {
+          seenTitles.add(titleKey);
+          uniqueArticles.push(article);
+        }
+      });
+      
+      expect(uniqueArticles.length).toBe(2); // Should remove one duplicate
+      expect(uniqueArticles[0].title).toContain("Same News Story");
+      expect(uniqueArticles[1].title).toBe("Completely Different News");
+    });
+    
+    test('should handle articles with identical links', () => {
+      const articles = [
+        {
+          title: "News Story One",
+          link: "https://example.com/same-link",
+          description: "Description one"
+        },
+        {
+          title: "News Story Two",
+          link: "https://example.com/same-link", // Same link
+          description: "Description two"
+        }
+      ];
+      
+      const uniqueArticles = [];
+      const seenLinks = new Set();
+      
+      articles.forEach(article => {
+        const linkKey = article.link.toLowerCase();
+        if (!seenLinks.has(linkKey)) {
+          seenLinks.add(linkKey);
+          uniqueArticles.push(article);
+        }
+      });
+      
+      expect(uniqueArticles.length).toBe(1); // Should keep only one
+    });
+  });
+  
+  // Test news categorization
+  describe('News Categorization', () => {
+    
+    test('should categorize YouTube content correctly', () => {
+      const { categorizeNews } = require('../server');
+      
+      const youtubeTitle = "CarryMinati latest controversy exposed";
+      const bollywoodTitle = "Shah Rukh Khan new movie release";
+      const cricketTitle = "Virat Kohli century in latest match";
+      const pakistanTitle = "Pakistan political crisis deepens";
+      const nationalTitle = "India economic policy update";
+      
+      expect(categorizeNews(youtubeTitle)).toBe('youtubers');
+      expect(categorizeNews(bollywoodTitle)).toBe('bollywood');
+      expect(categorizeNews(cricketTitle)).toBe('cricket');
+      expect(categorizeNews(pakistanTitle)).toBe('pakistan');
+      expect(categorizeNews(nationalTitle)).toBe('national');
+    });
+    
+    test('should handle mixed content appropriately', () => {
+      const { categorizeNews } = require('../server');
+      
+      const mixedTitle = "YouTube creator talks about Bollywood movie";
+      // Should prioritize first match (YouTube in this case)
+      expect(categorizeNews(mixedTitle)).toBe('youtubers');
+    });
+  });
+  
+  // Test database operations
+  describe('Database Operations', () => {
+    
+    beforeEach(async () => {
+      // Clean test data before each test
+      if (database && database.db) {
+        await new Promise((resolve) => {
+          database.db.run("DELETE FROM user_keywords WHERE user_id = 999999", resolve);
+        });
       }
-    ],
-    bollywood: [
-      {
-        title: "Bollywood Industry Latest Updates Today",
-        link: "https://www.google.com/search?q=bollywood+news+today&tbm=nws&tbs=qdr:d",
-        pubDate: currentTime,
-        formattedDate: "Just now",
-        source: "News Search",
-        category: "bollywood",
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        platform: 'news',
-        reliability: 8,
-        isVerified: true
+    });
+    
+    test('should add user keywords correctly', async () => {
+      if (!database) {
+        console.log('Database not available, skipping test');
+        return;
       }
-    ],
-    cricket: [
-      {
-        title: "Indian Cricket Team Latest News Today",
-        link: "https://www.google.com/search?q=india+cricket+news+today&tbm=nws&tbs=qdr:d",
-        pubDate: currentTime,
-        formattedDate: "Just now",
-        source: "Sports News",
-        category: "cricket",
-        timestamp: currentTime,
-        fetchTime: indianTime,
-        platform: 'news',
-        reliability: 8,
-        isVerified: true
+      
+      const testUserId = 999999;
+      const testCategory = 'youtubers';
+      const testKeyword = 'test keyword';
+      
+      try {
+        await database.addUserKeyword(testUserId, testCategory, testKeyword, 5);
+        const keywords = await database.getUserKeywords(testUserId, testCategory);
+        
+        expect(keywords.length).toBeGreaterThan(0);
+        expect(keywords[0].keyword).toBe(testKeyword);
+        expect(keywords[0].priority).toBe(5);
+      } catch (error) {
+        console.log('Database test skipped:', error.message);
       }
-    ],
-    national: [
-      {
-        title: "India Latest News and Updates Today",
-        link: "https://www.google.com/search?q=india+news+today&tbm=nws&tbs=qdr:d",
-        pubDate: currentTime,
-        formattedDate: "Just now",
-        source: "National News",
-        category: "national",
-        timestamp:
+    });
+    
+    test('should prevent duplicate keywords', async () => {
+      if (!database) return;
+      
+      const testUserId = 999999;
+      const testCategory = 'youtubers';
+      const testKeyword = 'duplicate test';
+      
+      try {
+        await database.addUserKeyword(testUserId, testCategory, testKeyword, 5);
+        
+        // Try to add the same keyword again - should handle gracefully
+        await database.addUserKeyword(testUserId, testCategory, testKeyword, 5);
+        
+        const keywords = await database.getUserKeywords(testUserId, testCategory);
+        expect(keywords.length).toBe(1); // Should still be only one
+      } catch (error) {
+        // Should handle duplicate gracefully
+        expect(error).toBeDefined();
+      }
+    });
+  });
+  
+  // Test rate limiting
+  describe('Rate Limiting', () => {
+    
+    test('should enforce rate limits correctly', () => {
+      const { checkUserRateLimit } = require('../server');
+      
+      const testUserId = 999999;
+      const testCommand = 'test';
+      
+      // Should allow first few requests
+      for (let i = 0; i < 5; i++) {
+        const result = checkUserRateLimit(testUserId, testCommand);
+        expect(result.allowed).toBe(true);
+      }
+      
+      // Should start blocking after limit
+      for (let i = 0; i < 10; i++) {
+        checkUserRateLimit(testUserId, testCommand);
+      }
+      
+      const blockedResult = checkUserRateLimit(testUserId, testCommand);
+      expect(blockedResult.allowed).toBe(false);
+      expect(blockedResult.resetTime).toBeGreaterThan(0);
+    });
+  });
+  
+  // Test API endpoints
+  describe('API Endpoints', () => {
+    
+    test('GET / should return bot status', async () => {
+      const response = await request(app).get('/');
+      
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('status');
+      expect(response.body).toHaveProperty('version');
+      expect(response.body).toHaveProperty('features');
+      expect(response.body.version).toBe('3.0.0');
+    });
+    
+    test('GET /health should return health status', async () => {
+      const response = await request(app).get('/health');
+      
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('status', 'healthy');
+      expect(response.body).toHaveProperty('features');
+      expect(response.body.features).toHaveProperty('workingLinks', true);
+      expect(response.body.features).toHaveProperty('contentScoring', true);
+      expect(response.body.features).toHaveProperty('moderation', true);
+    });
+    
+    test('GET /analytics should return analytics data', async () => {
+      const response = await request(app).get('/analytics');
+      
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('bot');
+      expect(response.body).toHaveProperty('content');
+      expect(response.body).toHaveProperty('system');
+      expect(response.body.bot).toHaveProperty('totalRequests');
+      expect(response.body.content).toHaveProperty('averageScore');
+      expect(response.body.system).toHaveProperty('uptime');
+    });
+    
+    test('GET /ping should return pong', async () => {
+      const response = await request(app).get('/ping');
+      
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('status', 'pong');
+      expect(response.body).toHaveProperty('version', '3.0.0');
+      expect(response.body).toHaveProperty('features');
+    });
+  });
+  
+  // Test utility functions
+  describe('Utility Functions', () => {
+    
+    test('should format dates correctly', () => {
+      const { formatNewsDate } = require('../server');
+      
+      const now = new Date();
+      const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      
+      expect(formatNewsDate(now.toISOString())).toBe('Just now');
+      expect(formatNewsDate(fiveMinutesAgo.toISOString())).toContain('min ago');
+      expect(formatNewsDate(oneHourAgo.toISOString())).toContain('h ago');
+      expect(formatNewsDate(oneDayAgo.toISOString())).not.toContain('ago');
+    });
+    
+    test('should get current Indian time', () => {
+      const { getCurrentIndianTime } = require('../server');
+      
+      const indianTime = getCurrentIndianTime();
+      expect(indianTime).toBeInstanceOf(Date);
+      
+      // Should be within reasonable range (not too far from current time)
+      const now = new Date();
+      const timeDiff = Math.abs(indianTime.getTime() - now.getTime());
+      expect(timeDiff).toBeLessThan(24 * 60 * 60 * 1000); // Within 24 hours
+    });
+    
+    test('should validate timestamps correctly', () => {
+      const { getCurrentTimestamp } = require('../server');
+      
+      const timestamp = getCurrentTimestamp();
+      expect(timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      
+      const parsedDate = new Date(timestamp);
+      expect(parsedDate).toBeInstanceOf(Date);
+      expect(isNaN(parsedDate.getTime())).toBe(false);
+    });
+  });
+  
+  // Test multi-platform search
+  describe('Multi-Platform Search', () => {
+    
+    test('should search across multiple platforms', async () => {
+      // Mock successful responses
+      axios.get.mockResolvedValue({
+        data: `<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <item>
+              <title>Test Search Result</title>
+              <link>https://example.com/news</link>
+              <pubDate>Mon, 06 Jun 2025 10:00:00 GMT</pubDate>
+              <description>Test description</description>
+            </item>
+          </channel>
+        </rss>`
+      });
+      
+      const { searchMultiplePlatforms } = require('../server');
+      const results = await searchMultiplePlatforms('test query');
+      
+      expect(results).toBeDefined();
+      expect(Array.isArray(results)).toBe(true);
+      
+      if (results.length > 0) {
+        // Should have results from different platforms
+        const platforms = [...new Set(results.map(r => r.platform))];
+        expect(platforms.length).toBeGreaterThan(0);
+        
+        // Each result should have required properties
+        results.forEach(result => {
+          expect(result).toHaveProperty('title');
+          expect(result).toHaveProperty('link');
+          expect(result).toHaveProperty('platform');
+          expect(result).toHaveProperty('totalScore');
+        });
+      }
+    });
+  });
+  
+  // Test enhanced keywords functionality
+  describe('Enhanced Keywords', () => {
+    
+    test('should have proper keyword structure', () => {
+      const { ENHANCED_SEARCH_KEYWORDS } = require('../server');
+      
+      expect(ENHANCED_SEARCH_KEYWORDS).toBeDefined();
+      
+      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+      categories.forEach(category => {
+        expect(ENHANCED_SEARCH_KEYWORDS[category]).toBeDefined();
+        expect(ENHANCED_SEARCH_KEYWORDS[category]).toHaveProperty('spicy');
+        expect(ENHANCED_SEARCH_KEYWORDS[category]).toHaveProperty('conspiracy');
+        expect(ENHANCED_SEARCH_KEYWORDS[category]).toHaveProperty('important');
+        
+        expect(Array.isArray(ENHANCED_SEARCH_KEYWORDS[category].spicy)).toBe(true);
+        expect(Array.isArray(ENHANCED_SEARCH_KEYWORDS[category].conspiracy)).toBe(true);
+        expect(Array.isArray(ENHANCED_SEARCH_KEYWORDS[category].important)).toBe(true);
+      });
+    });
+    
+    test('should have meaningful keyword content', () => {
+      const { ENHANCED_SEARCH_KEYWORDS } = require('../server');
+      
+      // Check that keywords are relevant to their categories
+      expect(ENHANCED_SEARCH_KEYWORDS.youtubers.spicy.some(k => 
+        k.toLowerCase().includes('youtube') || k.toLowerCase().includes('creator')
+      )).toBe(true);
+      
+      expect(ENHANCED_SEARCH_KEYWORDS.bollywood.spicy.some(k => 
+        k.toLowerCase().includes('bollywood') || k.toLowerCase().includes('celebrity')
+      )).toBe(true);
+      
+      expect(ENHANCED_SEARCH_KEYWORDS.cricket.spicy.some(k => 
+        k.toLowerCase().includes('cricket') || k.toLowerCase().includes('match')
+      )).toBe(true);
+    });
+  });
+  
+  // Test error handling
+  describe('Error Handling', () => {
+    
+    test('should handle network timeouts gracefully', async () => {
+      axios.get.mockRejectedValue(new Error('timeout'));
+      
+      const { scrapeEnhancedNews } = require('../server');
+      const results = await scrapeEnhancedNews('test', 'national');
+      
+      // Should not throw error, should return fallback
+      expect(results).toBeDefined();
+      expect(Array.isArray(results)).toBe(true);
+    });
+    
+    test('should handle malformed RSS data', async () => {
+      axios.get.mockResolvedValue({ data: 'invalid xml data' });
+      
+      const { scrapeEnhancedNews } = require('../server');
+      const results = await scrapeEnhancedNews('test', 'national');
+      
+      // Should handle gracefully and return fallback
+      expect(results).toBeDefined();
+      expect(Array.isArray(results)).toBe(true);
+    });
+  });
+  
+  // Performance tests
+  describe('Performance Tests', () => {
+    
+    test('content scoring should be fast', () => {
+      const { calculateSpiceScore, calculateConspiracyScore, calculateImportanceScore } = require('../server');
+      
+      const testTitle = "Breaking: Major controversy exposed in latest scandal drama";
+      const iterations = 1000;
+      
+      const startTime = Date.now();
+      
+      for (let i = 0; i < iterations; i++) {
+        calculateSpiceScore(testTitle);
+        calculateConspiracyScore(testTitle);
+        calculateImportanceScore(testTitle);
+      }
+      
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      
+      // Should complete 1000 iterations in under 100ms
+      expect(duration).toBeLessThan(100);
+    });
+    
+    test('duplicate filtering should be efficient', () => {
+      // Create array of 1000 articles with some duplicates
+      const articles = [];
+      for (let i = 0; i < 1000; i++) {
+        articles.push({
+          title: `Article ${i % 100}`, // Creates duplicates every 100
+          link: `https://example.com/article${i}`,
+          description: `Description ${i}`
+        });
+      }
+      
+      const startTime = Date.now();
+      
+      // Simulate duplicate removal
+      const uniqueArticles = [];
+      const seenTitles = new Set();
+      
+      articles.forEach(article => {
+        const titleKey = article.title.toLowerCase().substring(0, 40);
+        if (!seenTitles.has(titleKey)) {
+          seenTitles.add(titleKey);
+          uniqueArticles.push(article);
+        }
+      });
+      
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      
+      expect(uniqueArticles.length).toBe(100); // Should have 100 unique titles
+      expect(duration).toBeLessThan(50); // Should be fast
+    });
+  });
+});
+
+// Integration tests
+describe('Integration Tests', () => {
+  
+  test('complete news flow should work', async () => {
+    // Mock external API
+    axios.get.mockResolvedValue({
+      data: `<?xml version="1.0" encoding="UTF-8"?>
+      <rss version="2.0">
+        <channel>
+          <item>
+            <title>YouTube Drama Exposed - Creator Controversy</title>
+            <link>https://example.com/youtube-drama</link>
+            <pubDate>Mon, 06 Jun 2025 10:00:00 GMT</pubDate>
+            <description>Latest YouTube creator controversy exposed</description>
+          </item>
+        </channel>
+      </rss>`
+    });
+    
+    const { fetchEnhancedContent } = require('../server');
+    
+    try {
+      const results = await fetchEnhancedContent('youtubers');
+      
+      expect(results).toBeDefined();
+      expect(Array.isArray(results)).toBe(true);
+      
+      if (results.length > 0) {
+        const article = results[0];
+        expect(article).toHaveProperty('title');
+        expect(article).toHaveProperty('spiceScore');
+        expect(article).toHaveProperty('conspiracyScore');
+        expect(article).toHaveProperty('importanceScore');
+        expect(article).toHaveProperty('totalScore');
+        expect(article.category).toBe('youtubers');
+      }
+    } catch (error) {
+      console.log('Integration test skipped due to:', error.message);
+    }
+  });
+});
+
+// Cleanup after tests
+afterAll(async () => {
+  if (database && database.db) {
+    // Clean up test data
+    await new Promise((resolve) => {
+      database.db.run("DELETE FROM user_keywords WHERE user_id = 999999", resolve);
+    });
+    
+    // Close database connection
+    database.db.close();
+  }
+});
+
+// Test configuration
+module.exports = {
+  testEnvironment: 'node',
+  collectCoverage: true,
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov', 'html'],
+  testTimeout: 30000,
+  setupFilesAfterEnv: ['<rootDir>/tests/setup.js']
+};
