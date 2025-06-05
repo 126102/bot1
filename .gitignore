@@ -1,155 +1,333 @@
-# Dependencies
+# Enhanced Viral News Bot v3.0 - Git Ignore Rules
+
+# ================================
+# ENVIRONMENT & SECRETS
+# ================================
+.env
+.env.local
+.env.production
+.env.staging
+.env.development
+*.env
+
+# Bot tokens and API keys
+config/secrets.json
+secrets/
+credentials/
+
+# ================================
+# DEPENDENCIES
+# ================================
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+package-lock.json.backup
+.yarn/
+.pnp.*
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# ================================
+# DATABASE FILES
+# ================================
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+enhanced_news_bot.db
+test_news_bot.db
+backup_*.db
 
-# Logs
-logs
+# Database backups
+db_backups/
+*.sql.backup
+
+# ================================
+# LOGS & OUTPUT
+# ================================
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-lerna-debug.log*
 
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
+# Runtime logs
+combined.log
+error.log
+access.log
+debug.log
 
-# Coverage directory used by tools like istanbul
+# Log archives
+*.log.gz
+*.log.zip
+
+# ================================
+# TESTING & COVERAGE
+# ================================
 coverage/
+.nyc_output/
+.coverage/
+junit.xml
+test-results/
 *.lcov
 
-# nyc test coverage
-.nyc_output
+# Jest cache
+.jest/
+jest_cache/
 
-# Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
-.grunt
+# Test databases
+test_*.db
+*_test.db
 
-# Bower dependency directory (https://bower.io/)
-bower_components
-
-# node-waf configuration
-.lock-wscript
-
-# Compiled binary addons (https://nodejs.org/api/addons.html)
-build/Release
-
-# Dependency directories
-node_modules/
-jspm_packages/
-
-# Snowpack dependency directory (https://snowpack.dev/)
-web_modules/
-
-# TypeScript cache
-*.tsbuildinfo
-
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
-.eslintcache
-
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# dotenv environment variables file
-.env
-.env.test
-
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# Next.js build output
-.next
-out
-
-# Nuxt.js build / generate output
-.nuxt
-dist
-
-# Gatsby files
-.cache/
-public
-
-# Vuepress build output
+# ================================
+# BUILD & COMPILATION
+# ================================
+dist/
+build/
+out/
+.next/
+.nuxt/
 .vuepress/dist
 
-# Serverless directories
-.serverless/
+# TypeScript (if added later)
+*.tsbuildinfo
+.tscache/
 
-# FuseBox cache
-.fusebox/
+# ================================
+# CACHE DIRECTORIES
+# ================================
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
 
-# DynamoDB Local files
-.dynamodb/
+# Node.js cache
+.npm/
+.node_repl_history
 
-# TernJS port file
-.tern-port
-
-# Stores VSCode versions used for testing VSCode extensions
-.vscode-test
-
-# yarn v2
+# Yarn cache
+.yarn-integrity
 .yarn/cache
 .yarn/unplugged
 .yarn/build-state.yml
 .yarn/install-state.gz
-.pnp.*
 
-# IDE files
+# ================================
+# EDITOR & IDE FILES
+# ================================
+# VS Code
 .vscode/
+*.code-workspace
+
+# IntelliJ IDEA
 .idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
 *.swp
 *.swo
+*~
 
-# OS generated files
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+
+# ================================
+# OPERATING SYSTEM FILES
+# ================================
+# macOS
 .DS_Store
-.DS_Store?
+.AppleDouble
+.LSOverride
+Icon
 ._*
+.DocumentRevisions-V100
+.fseventsd
 .Spotlight-V100
+.TemporaryItems
 .Trashes
-ehthumbs.db
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
 Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
 
-# Temporary files
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ================================
+# DEPLOYMENT & DOCKER
+# ================================
+# Docker
+Dockerfile.prod
+docker-compose.override.yml
+.dockerignore
+
+# Deployment configs
+deploy/
+deployment/
+.deploy/
+
+# PM2
+.pm2/
+ecosystem.config.js.backup
+
+# ================================
+# BACKUP & TEMPORARY FILES
+# ================================
+# Backup files
+*.backup
+*.bak
+*.old
+*.orig
 *.tmp
-*.temp
+*~
 
-# Twitter scraping data
-*.json
-*.csv
-elvish.json
-carry.json
-tweets/
+# Temporary directories
+tmp/
+temp/
+.tmp/
+.temp/
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# ================================
+# SECURITY & SENSITIVE DATA
+# ================================
+# SSL certificates
+*.pem
+*.key
+*.crt
+*.cert
+*.ca-bundle
+
+# SSH keys
+id_rsa
+id_rsa.pub
+known_hosts
+
+# GPG keys
+*.gpg
+*.asc
+
+# ================================
+# ANALYTICS & MONITORING
+# ================================
+# Analytics data exports
+analytics_export/
+user_data/
+stats_backup/
+
+# Monitoring configs
+monitoring/
+alerts/
+
+# ================================
+# MISC APPLICATION FILES
+# ================================
+# Upload directories
+uploads/
+media/
+static/uploads/
 
 # Cache directories
-.cache/
 cache/
+.cache/
+cached_news/
 
-# Local configuration files
-config.local.js
-settings.local.json
+# Session files
+sessions/
+*.session
+
+# ================================
+# DEVELOPMENT TOOLS
+# ================================
+# Linting reports
+eslint-report.html
+.eslintrc.local
+
+# Documentation builds
+docs/build/
+docs/_build/
+
+# Storybook
+storybook-static/
+
+# ================================
+# CUSTOM APP-SPECIFIC IGNORES
+# ================================
+# News bot specific
+news_cache/
+rss_cache/
+scraped_data/
+content_backup/
+
+# User data exports
+user_keywords_export.json
+user_stats_export.json
+
+# Development test files
+test_*.js
+*.test.local.js
+dev_test_*
+
+# Custom configurations
+config.local.json
+local_config.js
+
+# ================================
+# KEEP THESE FILES (EXCEPTIONS)
+# ================================
+# Force include important config templates
+!.env.example
+!config.example.json
+!docker-compose.example.yml
+
+# Keep empty directories with .gitkeep
+!.gitkeep
+
+# ================================
+# NOTES FOR CONTRIBUTORS
+# ================================
+# If you need to add a file that's normally ignored:
+# Use: git add -f filename
+# 
+# To see what files are being ignored:
+# Use: git status --ignored
+#
+# To temporarily disable .gitignore:
+# Use: git add -A (but be careful!)
+#
+# Remember to never commit:
+# - Real bot tokens
+# - Database files with user data  
+# - Log files with sensitive information
+# - Any credentials or API keys
