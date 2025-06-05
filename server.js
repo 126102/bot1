@@ -1,10 +1,12 @@
-timestamp: currentTime,
-        fetchTime: indianTime,
-        platform: 'news',
-        reliability: 8,
-        isVerified: true
-      }
-    ],
+const newsArray = [
+  {
+    timestamp: currentTime,
+    fetchTime: indianTime,
+    platform: 'news',
+    reliability: 8,
+    isVerified: true
+  }
+];
     pakistan: [
       {
         title: "Pakistan Latest News and Trends Today",
