@@ -163,6 +163,14 @@ const ENHANCED_RSS_SOURCES = {
   ]
 };
 
+const ENHANCED_SEARCH_KEYWORDS = {
+  youtubers: { spicy: [] },
+  bollywood: { spicy: [] },
+  cricket: { spicy: [] },
+  national: { spicy: [] },
+  pakistan: { spicy: [] }
+};
+
 const SPICY_KEYWORDS = ['controversy', 'drama', 'fight', 'viral', 'trending', 'breaking', 'scandal', 'exposed', 'beef', 'roast', 'diss', 'leaked', 'secret'];
 const CONSPIRACY_KEYWORDS = ['conspiracy', 'secret', 'hidden', 'exposed', 'leaked', 'revelation', 'behind scenes', 'truth', 'cover up'];
 const IMPORTANCE_KEYWORDS = ['breaking', 'urgent', 'alert', 'emergency', 'crisis', 'important'];
