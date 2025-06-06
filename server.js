@@ -290,20 +290,17 @@ async function scrapeRealNews(query, category) {
     const now = new Date();
     const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     
-    const searchUrls = [
-      `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en&gl=US&ceid=US:en`,
-      `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`,
-      `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en&gl=PK&ceid=PK:en`,
-      `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en&gl=GB&ceid=GB:en`
-    ];
+    // Get RSS sources for category
+    const rssSources = ENHANCED_RSS_SOURCES[category] || [];
+    console.log(`📡 Using ${rssSources.length} RSS sources for ${category}`);
     
-    for (let urlIndex = 0; urlIndex < searchUrls.length; urlIndex++) {
-      const url = searchUrls[urlIndex];
+    for (let sourceIndex = 0; sourceIndex < rssSources.length; sourceIndex++) {
+      const rssUrl = rssSources[sourceIndex];
       
       try {
-        console.log(`🔍 Source ${urlIndex + 1}/4`);
+        console.log(`🔍 RSS Source ${sourceIndex + 1}/${rssSources.length}: ${rssUrl.split('/')[2]}`);
         
-        const response = await axios.get(url, {
+        const response = await axios.get(rssUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'application/rss+xml, application/xml, text/xml'
@@ -314,39 +311,38 @@ async function scrapeRealNews(query, category) {
         const $ = cheerio.load(response.data, { xmlMode: true });
         let foundInThisSource = 0;
         
-        $('item').each((i, elem) => {
-          if (i >= 50) return false;
+        // Handle both RSS and Atom formats
+        const items = $('item').length > 0 ? $('item') : $('entry');
+        
+        items.each((i, elem) => {
+          if (i >= 25) return false; // Limit per source
           
-          const title = $(elem).find('title').text().trim();
-          const link = $(elem).find('link').text().trim();
-          const pubDate = $(elem).find('pubDate').text().trim();
-          const description = $(elem).find('description').text().trim();
+          const $elem = $(elem);
+          const title = $elem.find('title').text().trim();
+          const link = $elem.find('link').attr('href') || $elem.find('link').text().trim();
+          const pubDate = $elem.find('pubDate').text().trim() || $elem.find('published').text().trim();
+          const description = $elem.find('description').text().trim() || $elem.find('summary').text().trim();
 
           if (title && link && title.length > 10) {
-            let articleDate = new Date();
-            if (pubDate) {
-              const parsedDate = new Date(pubDate);
-              if (!isNaN(parsedDate.getTime())) {
-                articleDate = parsedDate;
+            // Check if title/description contains query
+            const content = `${title} ${description}`.toLowerCase();
+            const queryWords = query.toLowerCase().split(' ');
+            const hasMatch = queryWords.some(word => content.includes(word));
+            
+            if (hasMatch) {
+              let articleDate = new Date();
+              if (pubDate) {
+                const parsedDate = new Date(pubDate);
+                if (!isNaN(parsedDate.getTime())) {
+                  articleDate = parsedDate;
+                }
               }
-            }
-            
-            const hoursAgo = Math.floor((now - articleDate) / (1000 * 60 * 60));
-            
-            if (articleDate >= last24Hours && hoursAgo <= 24) {
-              const articleCategory = categorizeNews(title, description);
-              if (articleCategory === category) {
+              
+              const hoursAgo = Math.floor((now - articleDate) / (1000 * 60 * 60));
+              
+              if (articleDate >= last24Hours && hoursAgo <= 24) {
                 let realUrl = link;
                 try {
-                  if (link.includes('url=')) {
-                    const urlMatch = link.match(/url=([^&]+)/);
-                    if (urlMatch) {
-                      realUrl = decodeURIComponent(urlMatch[1]);
-                      if (realUrl.includes('%')) {
-                        realUrl = decodeURIComponent(realUrl);
-                      }
-                    }
-                  }
                   if (!realUrl.startsWith('http')) {
                     realUrl = 'https://' + realUrl;
                   }
@@ -354,21 +350,14 @@ async function scrapeRealNews(query, category) {
                   realUrl = link;
                 }
                 
-                let source = 'News Source';
-                if (title.includes(' - ')) {
-                  const parts = title.split(' - ');
-                  if (parts.length > 1) {
-                    const lastPart = parts[parts.length - 1].trim();
-                    if (lastPart.length < 50 && lastPart.length > 2) {
-                      source = lastPart;
-                    }
-                  }
+                // Extract source name from RSS URL
+                let source = rssUrl.split('/')[2].replace('www.', '');
+                if (source.includes('reddit.com')) {
+                  source = $elem.find('title').text().includes('r/') ? 
+                    $elem.find('title').text().split('r/')[1]?.split(' ')[0] || 'Reddit' : 'Reddit';
                 }
                 
-                let cleanTitle = title;
-                if (title.includes(' - ') && source !== 'News Source') {
-                  cleanTitle = title.replace(` - ${source}`, '').trim();
-                }
+                let cleanTitle = title.replace(/\s+/g, ' ').trim();
                 
                 const titleKey = cleanTitle.toLowerCase().replace(/[^\w\s]/g, '').substring(0, 30);
                 const isDuplicate = articles.some(existing => {
@@ -382,15 +371,15 @@ async function scrapeRealNews(query, category) {
                   const importanceScore = calculateImportanceScore(cleanTitle, description);
                   
                   articles.push({
-                    title: cleanTitle.replace(/\s+/g, ' ').trim(),
+                    title: cleanTitle,
                     link: realUrl,
                     pubDate: pubDate,
                     formattedDate: formatNewsDate(pubDate),
                     description: description ? description.substring(0, 120) + '...' : '',
                     source: source,
-                    category: articleCategory,
+                    category: category,
                     timestamp: articleDate.toISOString(),
-                    platform: 'news',
+                    platform: 'rss',
                     reliability: 9,
                     isVerified: true,
                     spiceScore: spiceScore,
@@ -398,7 +387,8 @@ async function scrapeRealNews(query, category) {
                     importanceScore: importanceScore,
                     totalScore: spiceScore + conspiracyScore + importanceScore,
                     hoursAgo: hoursAgo,
-                    sourceType: url.includes('gl=US') ? 'Worldwide' : url.includes('gl=IN') ? 'India' : url.includes('gl=PK') ? 'Pakistan' : 'UK'
+                    sourceType: source,
+                    rssSource: rssUrl
                   });
                   
                   foundInThisSource++;
@@ -408,29 +398,54 @@ async function scrapeRealNews(query, category) {
           }
         });
         
-        console.log(`✅ Source completed: Found ${foundInThisSource} articles`);
+        console.log(`✅ RSS Source completed: Found ${foundInThisSource} articles`);
         
-        if (urlIndex < searchUrls.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1500));
+        if (sourceIndex < rssSources.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
         }
         
       } catch (error) {
-        console.error(`❌ Source ${urlIndex + 1} failed: ${error.message}`);
+        console.error(`❌ RSS Source ${sourceIndex + 1} failed: ${error.message}`);
       }
     }
     
+    // Sort by score and recency
     articles.sort((a, b) => {
       const scoreDiff = (b.totalScore || 0) - (a.totalScore || 0);
       if (Math.abs(scoreDiff) > 1) return scoreDiff;
       return new Date(b.timestamp) - new Date(a.timestamp);
     });
     
+    console.log(`🎯 Total articles found: ${articles.length}`);
     return articles;
     
   } catch (error) {
-    console.error(`News scraping error: ${error.message}`);
+    console.error(`RSS scraping error: ${error.message}`);
     return [];
   }
+}
+
+async function addMultipleKeywords(userId, category, keywordsString) {
+  const keywords = keywordsString.split(',').map(k => k.trim()).filter(k => k.length > 0);
+  const results = [];
+  
+  for (const keyword of keywords) {
+    try {
+      const existingKeywords = await database.getUserKeywords(userId, category);
+      const keywordExists = existingKeywords.some(k => k.keyword.toLowerCase() === keyword.toLowerCase());
+      
+      if (!keywordExists) {
+        await database.addUserKeyword(userId, category, keyword, 5);
+        results.push({ keyword, status: 'added' });
+      } else {
+        results.push({ keyword, status: 'exists' });
+      }
+    } catch (error) {
+      results.push({ keyword, status: 'error' });
+    }
+  }
+  
+  return results;
 }
 
 async function fetchEnhancedContent(category, userId = null) {
@@ -1081,32 +1096,72 @@ if (bot) {
 
   // Command: /addkeyword
   bot.onText(/\/addkeyword (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const input = match[1].trim();
-    const parts = input.split(' ');
-    
-    if (parts.length < 2) {
-      await bot.sendMessage(chatId, `❌ *Usage:* /addkeyword <category> <keyword>
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  const input = match[1].trim();
+  const parts = input.split(' ');
+  
+  if (parts.length < 2) {
+    await bot.sendMessage(chatId, `❌ *Usage:* /addkeyword <category> <keywords>
 
 *Categories:* youtubers, bollywood, cricket, national, pakistan
 
-*Examples:*
+*Single Keyword:*
 • /addkeyword youtubers CarryMinati
-• /addkeyword bollywood Salman Khan
-• /addkeyword cricket Virat Kohli`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    const category = parts[0].toLowerCase();
-    const keyword = parts.slice(1).join(' ');
-    
-    if (!ENHANCED_SEARCH_KEYWORDS[category]) {
-      await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
-      return;
-    }
-    
-    try {
+
+*Multiple Keywords (comma separated):*
+• /addkeyword youtubers CarryMinati, Elvish Yadav, Triggered Insaan
+• /addkeyword bollywood Salman Khan, Shah Rukh Khan, Akshay Kumar
+
+*Pro Tip:* Use commas to separate multiple keywords!`, { parse_mode: 'Markdown' });
+    return;
+  }
+  
+  const category = parts[0].toLowerCase();
+  const keywordsPart = parts.slice(1).join(' ');
+  
+  if (!ENHANCED_SEARCH_KEYWORDS[category]) {
+    await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
+    return;
+  }
+  
+  try {
+    // Check if multiple keywords (contains comma)
+    if (keywordsPart.includes(',')) {
+      const results = await addMultipleKeywords(userId, category, keywordsPart);
+      
+      const added = results.filter(r => r.status === 'added');
+      const existing = results.filter(r => r.status === 'exists');
+      const errors = results.filter(r => r.status === 'error');
+      
+      let message = `📝 *MULTIPLE KEYWORDS PROCESSED*\n\n`;
+      
+      if (added.length > 0) {
+        message += `✅ *Added (${added.length}):*\n`;
+        added.forEach(r => message += `• ${r.keyword}\n`);
+        message += '\n';
+      }
+      
+      if (existing.length > 0) {
+        message += `⚠️ *Already Exist (${existing.length}):*\n`;
+        existing.forEach(r => message += `• ${r.keyword}\n`);
+        message += '\n';
+      }
+      
+      if (errors.length > 0) {
+        message += `❌ *Errors (${errors.length}):*\n`;
+        errors.forEach(r => message += `• ${r.keyword}\n`);
+        message += '\n';
+      }
+      
+      message += `📂 *Category:* ${category}\n`;
+      message += `🚀 Use /${category} to see results!`;
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      
+    } else {
+      // Single keyword (existing logic)
+      const keyword = keywordsPart;
       const existingKeywords = await database.getUserKeywords(userId, category);
       const keywordExists = existingKeywords.some(k => k.keyword.toLowerCase() === keyword.toLowerCase());
       
@@ -1126,64 +1181,18 @@ if (bot) {
 📊 *Your total keywords:* ${totalKeywords}
 
 🚀 Use /${category} to see results with your keyword!`, { parse_mode: 'Markdown' });
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Add keyword error:', error);
-      await bot.sendMessage(chatId, `❌ Error adding keyword. Try again.`);
-      botStats.errors++;
     }
-  });
-
-  // Command: /listkeywords
-  bot.onText(/\/listkeywords/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
     
-    try {
-      let message = '📝 *YOUR CUSTOM KEYWORDS*\n\n';
-      let totalKeywords = 0;
-      
-      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
-      
-      for (const category of categories) {
-        try {
-          const userKeywords = await database.getUserKeywords(userId, category);
-          const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
-          
-          message += `${icon} *${category.toUpperCase()}* (${userKeywords.length}):\n`;
-          
-          if (userKeywords.length > 0) {
-            userKeywords.forEach((k, index) => {
-              message += `${index + 1}. ${k.keyword}\n`;
-            });
-          } else {
-            message += `• No keywords yet\n`;
-          }
-          message += '\n';
-          totalKeywords += userKeywords.length;
-        } catch (categoryError) {
-          console.error(`Error fetching ${category} keywords:`, categoryError);
-        }
-      }
-      
-      message += `📊 *Total Keywords:* ${totalKeywords}\n\n`;
-      message += `💡 *Add more:* /addkeyword <category> <keyword>\n`;
-      message += `🗑️ *Remove:* /removekeyword <category> <keyword>`;
-      
-      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('List keywords error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching keywords. Try again.`);
-      botStats.errors++;
-    }
-  });
-
+    botStats.totalRequests++;
+    botStats.successfulRequests++;
+    
+  } catch (error) {
+    console.error('Add keyword error:', error);
+    await bot.sendMessage(chatId, `❌ Error adding keyword. Try again.`);
+    botStats.errors++;
+  }
+});
+  
   // Command: /removekeyword
   bot.onText(/\/removekeyword (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
