@@ -1148,7 +1148,7 @@ if (bot) {
   const category = parts[0].toLowerCase();
   const keywordsPart = parts.slice(1).join(' ');
   
-  if (!ENHANCED_RSS_KEYWORDS[category]) {
+  if (!ENHANCED_SEARCH_KEYWORDS[category]) {
     await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
     return;
   }
@@ -1220,6 +1220,53 @@ if (bot) {
     botStats.errors++;
   }
 });
+
+  // Command: /listkeywords
+bot.onText(/\/listkeywords/, async (msg) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  
+  try {
+    let message = '📝 *YOUR CUSTOM KEYWORDS*\n\n';
+    let totalKeywords = 0;
+    
+    const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+    
+    for (const category of categories) {
+      try {
+        const userKeywords = await database.getUserKeywords(userId, category);
+        const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
+        
+        message += `${icon} *${category.toUpperCase()}* (${userKeywords.length}):\n`;
+        
+        if (userKeywords.length > 0) {
+          userKeywords.forEach((k, index) => {
+            message += `${index + 1}. ${k.keyword}\n`;
+          });
+        } else {
+          message += `• No keywords yet\n`;
+        }
+        message += '\n';
+        totalKeywords += userKeywords.length;
+      } catch (categoryError) {
+        console.error(`Error fetching ${category} keywords:`, categoryError);
+      }
+    }
+    
+    message += `📊 *Total Keywords:* ${totalKeywords}\n\n`;
+    message += `💡 *Add more:* /addkeyword <category> <keyword>\n`;
+    message += `🗑️ *Remove:* /removekeyword <category> <keyword>`;
+    
+    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+    botStats.totalRequests++;
+    botStats.successfulRequests++;
+    
+  } catch (error) {
+    console.error('List keywords error:', error);
+    await bot.sendMessage(chatId, `❌ Error fetching keywords. Try again.`);
+    botStats.errors++;
+  }
+});
   
   // Command: /removekeyword
   bot.onText(/\/removekeyword (.+)/, async (msg, match) => {
@@ -1244,7 +1291,7 @@ if (bot) {
   const category = parts[0].toLowerCase();
   const keywordsPart = parts.slice(1).join(' ');
   
-  if (!ENHANCED_RSS_KEYWORDS[category]) {
+  if (!ENHANCED_SEARCH_KEYWORDS[category]) {
     await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
     return;
   }
