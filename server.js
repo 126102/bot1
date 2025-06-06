@@ -389,6 +389,17 @@ async function scrapeRealNews(query, category) {
                   const conspiracyScore = calculateConspiracyScore(cleanTitle, description);
                   const importanceScore = calculateImportanceScore(cleanTitle, description);
                   
+                  let matchPriority = 0;
+                  if (titleLower.includes(queryLower)) {
+                    matchPriority = 100; // Exact match in title (highest)
+                  } else if (descLower.includes(queryLower)) {
+                    matchPriority = 90;  // Exact match in description
+                  } else if (queryWords.some(word => titleLower.includes(word))) {
+                    matchPriority = 80;  // Word match in title
+                  } else if (queryWords.some(word => descLower.includes(word))) {
+                    matchPriority = 70;  // Word match in description
+                  }
+                  
                   articles.push({
                     title: cleanTitle,
                     link: realUrl,
@@ -408,7 +419,8 @@ async function scrapeRealNews(query, category) {
                     hoursAgo: hoursAgo,
                     sourceType: source,
                     rssSource: rssUrl,
-                    matchedKeyword: query
+                    matchedKeyword: query,
+                    matchPriority: matchPriority  // NEW FIELD
                   });
                   
                   foundInThisSource++;
@@ -430,10 +442,17 @@ async function scrapeRealNews(query, category) {
       }
     }
     
-    // Sort by score and recency
+    // Sort by match priority FIRST, then score, then recency
     articles.sort((a, b) => {
+      // 1. Match priority first (exact matches on top)
+      const priorityDiff = (b.matchPriority || 0) - (a.matchPriority || 0);
+      if (priorityDiff !== 0) return priorityDiff;
+      
+      // 2. Then by total score
       const scoreDiff = (b.totalScore || 0) - (a.totalScore || 0);
-      if (Math.abs(scoreDiff) > 1) return scoreDiff;
+      if (Math.abs(scoreDiff) > 2) return scoreDiff;
+      
+      // 3. Finally by recency
       return new Date(b.timestamp) - new Date(a.timestamp);
     });
     
