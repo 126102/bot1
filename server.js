@@ -348,115 +348,159 @@ async function scrapeRealNews(query, category) {
     const now = new Date();
     const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000); // Last 24 hours
     
-    // Google News RSS with time filter for latest news
-    try {
-      const encodedQuery = encodeURIComponent(query);
-      // Add when parameter for recent news (last 24 hours)
-      const url = `https://news.google.com/rss/search?q=${encodedQuery}&hl=en-IN&gl=IN&ceid=IN:en&when:1d`;
+    // Multiple Google News RSS attempts for better results
+    const searchUrls = [
+      // Primary search with time filter
+      `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`,
+      // Secondary search with "when" parameter (different format)
+      `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:24h&hl=en-IN&gl=IN&ceid=IN:en`,
+      // Third search with "recent" keyword
+      `https://news.google.com/rss/search?q=${encodeURIComponent(query + ' latest news')}&hl=en-IN&gl=IN&ceid=IN:en`
+    ];
+    
+    for (let urlIndex = 0; urlIndex < searchUrls.length; urlIndex++) {
+      const url = searchUrls[urlIndex];
       
-      console.log(`🔍 Searching: ${url}`);
-      
-      const response = await axios.get(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        },
-        timeout: 15000
-      });
-
-      const $ = cheerio.load(response.data, { xmlMode: true });
-      
-      $('item').each((i, elem) => {
-        // Increase limit to get more articles
-        if (i >= 30) return false;
+      try {
+        console.log(`🔍 Attempt ${urlIndex + 1}: ${url}`);
         
-        const title = $(elem).find('title').text().trim();
-        const link = $(elem).find('link').text().trim();
-        const pubDate = $(elem).find('pubDate').text().trim();
-        const description = $(elem).find('description').text().trim();
+        const response = await axios.get(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/rss+xml, application/xml, text/xml'
+          },
+          timeout: 15000
+        });
 
-        if (title && link && title.length > 10) {
+        const $ = cheerio.load(response.data, { xmlMode: true });
+        let foundInThisAttempt = 0;
+        
+        $('item').each((i, elem) => {
+          // Increase limit significantly
+          if (i >= 50) return false;
           
-          // Check if article is from last 24 hours
-          let articleDate = new Date(pubDate);
-          if (isNaN(articleDate.getTime())) {
-            articleDate = new Date(); // If date parsing fails, assume it's recent
-          }
-          
-          // Only include articles from last 24 hours
-          if (articleDate >= last24Hours) {
+          const title = $(elem).find('title').text().trim();
+          const link = $(elem).find('link').text().trim();
+          const pubDate = $(elem).find('pubDate').text().trim();
+          const description = $(elem).find('description').text().trim();
+
+          if (title && link && title.length > 10) {
             
-            // Extract real URL from Google News redirect
-            let realUrl = link;
-            if (link.includes('url=')) {
-              const urlMatch = link.match(/url=([^&]+)/);
-              if (urlMatch) {
-                try {
-                  realUrl = decodeURIComponent(urlMatch[1]);
-                  if (realUrl.includes('%')) {
-                    realUrl = decodeURIComponent(realUrl);
+            // Parse date with fallback
+            let articleDate = new Date();
+            if (pubDate) {
+              const parsedDate = new Date(pubDate);
+              if (!isNaN(parsedDate.getTime())) {
+                articleDate = parsedDate;
+              }
+            }
+            
+            // Calculate hours ago
+            const hoursAgo = Math.floor((now - articleDate) / (1000 * 60 * 60));
+            
+            // Only include articles from last 48 hours (more lenient for better results)
+            if (articleDate >= new Date(now.getTime() - 48 * 60 * 60 * 1000)) {
+              
+              // Extract real URL from Google News redirect
+              let realUrl = link;
+              try {
+                if (link.includes('url=')) {
+                  const urlMatch = link.match(/url=([^&]+)/);
+                  if (urlMatch) {
+                    realUrl = decodeURIComponent(urlMatch[1]);
+                    if (realUrl.includes('%')) {
+                      realUrl = decodeURIComponent(realUrl);
+                    }
                   }
-                } catch (e) {
+                } else if (link.includes('news.google.com')) {
+                  // Keep Google News links as they are working
                   realUrl = link;
                 }
+              } catch (e) {
+                realUrl = link;
               }
-            }
-            
-            // Extract source from title
-            let source = 'News Source';
-            if (title.includes(' - ')) {
-              const parts = title.split(' - ');
-              if (parts.length > 1) {
-                const lastPart = parts[parts.length - 1].trim();
-                if (lastPart.length < 50 && lastPart.length > 2) {
-                  source = lastPart;
+              
+              // Extract source from title
+              let source = 'News Source';
+              if (title.includes(' - ')) {
+                const parts = title.split(' - ');
+                if (parts.length > 1) {
+                  const lastPart = parts[parts.length - 1].trim();
+                  if (lastPart.length < 50 && lastPart.length > 2) {
+                    source = lastPart;
+                  }
                 }
               }
+              
+              // Clean title
+              let cleanTitle = title;
+              if (title.includes(' - ') && source !== 'News Source') {
+                cleanTitle = title.replace(` - ${source}`, '').trim();
+              }
+              
+              // Check if this article already exists (avoid duplicates across attempts)
+              const titleKey = cleanTitle.toLowerCase().replace(/[^\w\s]/g, '').substring(0, 40);
+              const isDuplicate = articles.some(existing => {
+                const existingKey = existing.title.toLowerCase().replace(/[^\w\s]/g, '').substring(0, 40);
+                return titleKey === existingKey;
+              });
+              
+              if (!isDuplicate) {
+                const spiceScore = calculateSpiceScore(cleanTitle, description);
+                const conspiracyScore = calculateConspiracyScore(cleanTitle, description);
+                const importanceScore = calculateImportanceScore(cleanTitle, description);
+                
+                articles.push({
+                  title: cleanTitle.replace(/\s+/g, ' ').trim(),
+                  link: realUrl,
+                  pubDate: pubDate,
+                  formattedDate: formatNewsDate(pubDate),
+                  description: description ? description.substring(0, 120) + '...' : '',
+                  source: source,
+                  category: categorizeNews(cleanTitle, description),
+                  timestamp: articleDate.toISOString(),
+                  platform: 'news',
+                  reliability: 9,
+                  isVerified: true,
+                  spiceScore: spiceScore,
+                  conspiracyScore: conspiracyScore,
+                  importanceScore: importanceScore,
+                  totalScore: spiceScore + conspiracyScore + importanceScore,
+                  hoursAgo: hoursAgo
+                });
+                
+                foundInThisAttempt++;
+                console.log(`✅ Added: ${cleanTitle.substring(0, 50)}... (${hoursAgo}h ago)`);
+              }
+            } else {
+              console.log(`❌ Too old: ${title.substring(0, 30)}... (${hoursAgo}h ago)`);
             }
-            
-            // Clean title
-            let cleanTitle = title;
-            if (title.includes(' - ') && source !== 'News Source') {
-              cleanTitle = title.replace(` - ${source}`, '').trim();
-            }
-            
-            const spiceScore = calculateSpiceScore(cleanTitle, description);
-            const conspiracyScore = calculateConspiracyScore(cleanTitle, description);
-            const importanceScore = calculateImportanceScore(cleanTitle, description);
-            
-            articles.push({
-              title: cleanTitle.replace(/\s+/g, ' ').trim(),
-              link: realUrl,
-              pubDate: pubDate,
-              formattedDate: formatNewsDate(pubDate),
-              description: description ? description.substring(0, 120) + '...' : '',
-              source: source,
-              category: categorizeNews(cleanTitle, description),
-              timestamp: articleDate.toISOString(),
-              platform: 'news',
-              reliability: 9,
-              isVerified: true,
-              spiceScore: spiceScore,
-              conspiracyScore: conspiracyScore,
-              importanceScore: importanceScore,
-              totalScore: spiceScore + conspiracyScore + importanceScore,
-              hoursAgo: Math.floor((now - articleDate) / (1000 * 60 * 60))
-            });
-            
-            console.log(`✅ Added: ${cleanTitle.substring(0, 50)}... (${Math.floor((now - articleDate) / (1000 * 60 * 60))}h ago)`);
-          } else {
-            console.log(`❌ Skipped old article: ${title.substring(0, 50)}... (${Math.floor((now - articleDate) / (1000 * 60 * 60))}h ago)`);
           }
+        });
+        
+        console.log(`✅ Attempt ${urlIndex + 1}: Found ${foundInThisAttempt} new articles`);
+        
+        // Add delay between attempts
+        if (urlIndex < searchUrls.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
-      });
-      
-      console.log(`✅ Google News: ${articles.length} LATEST articles for "${query}"`);
-      
-    } catch (error) {
-      console.error(`Google News error: ${error.message}`);
+        
+      } catch (error) {
+        console.error(`❌ Attempt ${urlIndex + 1} failed: ${error.message}`);
+      }
     }
     
-    // Sort by newest first
-    articles.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    console.log(`✅ Total articles found for "${query}": ${articles.length}`);
+    
+    // Sort by newest first, then by score
+    articles.sort((a, b) => {
+      // First by recency
+      const timeDiff = new Date(b.timestamp) - new Date(a.timestamp);
+      if (Math.abs(timeDiff) > 3600000) return timeDiff; // If more than 1 hour difference, sort by time
+      
+      // If similar time, sort by score
+      return (b.totalScore || 0) - (a.totalScore || 0);
+    });
     
     return articles;
     
@@ -491,28 +535,32 @@ async function fetchEnhancedContent(category, userId = null) {
     }
     
     // 1. Search using user keywords first (HIGHEST PRIORITY)
-    console.log(`🔍 Starting USER KEYWORD searches for ${category}...`);
-    for (const userKeyword of userKeywords.slice(0, 4)) { // Increased from 2 to 4
-      try {
-        console.log(`   🎯 USER KEYWORD: "${userKeyword.keyword}"`);
-        const articles = await scrapeRealNews(userKeyword.keyword, category);
-        console.log(`   ✅ Found ${articles.length} articles for user keyword: ${userKeyword.keyword}`);
-        allArticles.push(...articles);
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Reduced delay
-      } catch (error) {
-        console.error(`User keyword search error: ${error.message}`);
+    if (userKeywords.length > 0) {
+      console.log(`🔍 Starting USER KEYWORD searches for ${category}...`);
+      for (const userKeyword of userKeywords.slice(0, 6)) { // Increased from 4 to 6
+        try {
+          console.log(`   🎯 USER KEYWORD: "${userKeyword.keyword}"`);
+          const articles = await scrapeRealNews(userKeyword.keyword, category);
+          console.log(`   ✅ Found ${articles.length} articles for user keyword: ${userKeyword.keyword}`);
+          allArticles.push(...articles);
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Reduced delay
+        } catch (error) {
+          console.error(`User keyword search error: ${error.message}`);
+        }
       }
+    } else {
+      console.log(`📝 No user keywords found for ${category}, using defaults only`);
     }
     
     // 2. Search using default spicy keywords (MORE SEARCHES)
     console.log(`🔍 Starting DEFAULT SPICY searches for ${category}...`);
-    for (const keyword of categoryKeywords.spicy.slice(0, 5)) { // Increased from 3 to 5
+    for (const keyword of categoryKeywords.spicy.slice(0, 6)) { // Increased from 5 to 6
       try {
         console.log(`   🌶️ SPICY KEYWORD: "${keyword}"`);
         const articles = await scrapeRealNews(keyword, category);
         console.log(`   ✅ Found ${articles.length} articles for spicy keyword: ${keyword}`);
         allArticles.push(...articles);
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Reduced delay
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Reduced delay
       } catch (error) {
         console.error(`Spicy search error: ${error.message}`);
       }
@@ -521,21 +569,36 @@ async function fetchEnhancedContent(category, userId = null) {
     // 3. Additional searches with category-specific terms
     console.log(`🔍 Starting CATEGORY-SPECIFIC searches for ${category}...`);
     const additionalSearchTerms = {
-      youtubers: ['YouTube drama latest', 'Indian YouTuber controversy', 'creator scandal today'],
-      bollywood: ['Bollywood scandal latest', 'celebrity controversy today', 'film industry drama'],
-      cricket: ['cricket controversy latest', 'IPL scandal today', 'player controversy'],
-      national: ['India political scandal', 'government controversy latest', 'corruption news today'],
-      pakistan: ['Pakistan crisis latest', 'Pakistani politics today', 'Imran Khan latest']
+      youtubers: [
+        'YouTube drama latest', 'Indian YouTuber controversy', 'creator scandal today',
+        'YouTube scandal 2024', 'influencer drama news', 'YouTube creator exposed'
+      ],
+      bollywood: [
+        'Bollywood scandal latest', 'celebrity controversy today', 'film industry drama',
+        'Bollywood news 2024', 'celebrity affair scandal', 'film star controversy'
+      ],
+      cricket: [
+        'cricket controversy latest', 'IPL scandal today', 'player controversy',
+        'cricket news 2024', 'match fixing news', 'cricket player scandal'
+      ],
+      national: [
+        'India political scandal', 'government controversy latest', 'corruption news today',
+        'political news India', 'government scandal 2024', 'political controversy'
+      ],
+      pakistan: [
+        'Pakistan crisis latest', 'Pakistani politics today', 'Imran Khan latest',
+        'Pakistan news 2024', 'Pakistani political drama', 'Pakistan government crisis'
+      ]
     };
     
     const extraTerms = additionalSearchTerms[category] || [];
-    for (const term of extraTerms) {
+    for (const term of extraTerms.slice(0, 4)) { // Limit to 4 extra terms
       try {
         console.log(`   📰 EXTRA SEARCH: "${term}"`);
         const articles = await scrapeRealNews(term, category);
         console.log(`   ✅ Found ${articles.length} articles for extra term: ${term}`);
         allArticles.push(...articles);
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error) {
         console.error(`Extra search error: ${error.message}`);
       }
@@ -554,11 +617,11 @@ async function fetchEnhancedContent(category, userId = null) {
         .replace(/[^\w\s]/g, '') // Remove special chars
         .replace(/\s+/g, ' ') // Normalize spaces
         .trim()
-        .substring(0, 40); // First 40 chars for comparison
+        .substring(0, 30); // Reduced from 40 to 30 for better uniqueness
       
       const urlKey = article.link.toLowerCase()
         .replace(/[^\w]/g, '') // Remove all non-word chars
-        .substring(0, 60); // First 60 chars
+        .substring(0, 50); // Reduced from 60 to 50
       
       // More strict duplicate detection
       let isDuplicate = false;
@@ -575,8 +638,10 @@ async function fetchEnhancedContent(category, userId = null) {
       
       // Check similar titles (prevent very similar articles)
       for (const existingTitle of seenTitles) {
-        if (titleKey.includes(existingTitle) || existingTitle.includes(titleKey)) {
-          if (Math.abs(titleKey.length - existingTitle.length) < 10) {
+        if (titleKey.length > 10 && existingTitle.length > 10) {
+          // Calculate similarity
+          const similarity = titleKey.includes(existingTitle) || existingTitle.includes(titleKey);
+          if (similarity && Math.abs(titleKey.length - existingTitle.length) < 8) {
             isDuplicate = true;
             break;
           }
@@ -595,19 +660,25 @@ async function fetchEnhancedContent(category, userId = null) {
     
     // Sort by total score AND recency (IMPROVED SORTING)
     uniqueArticles.sort((a, b) => {
-      // First sort by total score
+      // First sort by total score (higher score first)
       const scoreDiff = (b.totalScore || 0) - (a.totalScore || 0);
-      if (scoreDiff !== 0) return scoreDiff;
+      if (Math.abs(scoreDiff) > 2) return scoreDiff; // If significant score difference
       
-      // Then by recency if scores are same
+      // Then by recency if scores are similar
       return new Date(b.timestamp) - new Date(a.timestamp);
     });
     
-    // Return more articles (increased from 15 to 25)
-    const finalArticles = uniqueArticles.slice(0, 25);
+    // Return more articles (increased from 25 to 30)
+    const finalArticles = uniqueArticles.slice(0, 30);
     
     console.log(`✅ FINAL: ${finalArticles.length} unique latest articles for ${category}`);
-    console.log(`📊 Score range: ${finalArticles.length > 0 ? Math.max(...finalArticles.map(a => a.totalScore || 0)) : 0} (max) to ${finalArticles.length > 0 ? Math.min(...finalArticles.map(a => a.totalScore || 0)) : 0} (min)`);
+    
+    if (finalArticles.length > 0) {
+      const maxScore = Math.max(...finalArticles.map(a => a.totalScore || 0));
+      const minScore = Math.min(...finalArticles.map(a => a.totalScore || 0));
+      const avgAge = Math.round(finalArticles.reduce((sum, a) => sum + (a.hoursAgo || 0), 0) / finalArticles.length);
+      console.log(`📊 Score range: ${maxScore} (max) to ${minScore} (min) | Avg age: ${avgAge}h`);
+    }
     
     return finalArticles;
     
@@ -710,14 +781,14 @@ async function formatAndSendNewsMessage(chatId, articles, category, bot) {
     
     const summaryMessage = `🔥 *${category.toUpperCase()} LATEST NEWS* 🔥
 
-📊 *Found: ${articles.length} articles (Last 24 hours)*
+📊 *Found: ${articles.length} articles (Last 48 hours)*
 🌶️ *Spicy Content: ${spicyCount} articles*
 🕵️ *Conspiracy Content: ${conspiracyCount} articles*
 ⭐ *Average Score: ${avgScore}/30*
-⏰ *Fresh Data: Only latest news from multiple sources*
+⏰ *Fresh Data: Latest news from multiple sources*
 🕐 *Updated: ${currentTime.toLocaleString('en-IN')}*
 
-*🔥 All articles are from LAST 24 HOURS ONLY!*
+*🔥 All articles are FRESH & LATEST!*
 *Score Legend:* 🌶️ Spice | 🕵️ Conspiracy | ⚡ Importance`;
     
     await bot.sendMessage(chatId, summaryMessage, { parse_mode: 'Markdown' });
