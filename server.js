@@ -389,29 +389,48 @@ async function scrapeRealNews(query, category) {
                   const conspiracyScore = calculateConspiracyScore(cleanTitle, description);
                   const importanceScore = calculateImportanceScore(cleanTitle, description);
                   
-                  // SUPER STRICT matching - NO partial word matches
+                  // BULLETPROOF STRICT matching - EXACT PHRASES ONLY
                   let matchPriority = 0;
                   
-                  // Create word boundaries for exact matching
-                  const titleWords = titleLower.split(/\s+/);
-                  const descWords = descLower.split(/\s+/);
-                  const queryWords = queryLower.split(/\s+/);
+                  // Remove punctuation and extra spaces for clean matching
+                  const cleanTitle = titleLower.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+                  const cleanDesc = descLower.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+                  const cleanQuery = queryLower.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
                   
-                  // 1. Exact full phrase match (highest priority)
-                  if (titleLower.includes(queryLower)) {
-                    matchPriority = 1000;
-                  } else if (descLower.includes(queryLower)) {
-                    matchPriority = 500;
+                  // Split into words
+                  const titleWords = cleanTitle.split(' ').filter(w => w.length > 0);
+                  const descWords = cleanDesc.split(' ').filter(w => w.length > 0);
+                  const queryWords = cleanQuery.split(' ').filter(w => w.length > 0);
+                  
+                  // 1. EXACT FULL PHRASE match (HIGHEST PRIORITY)
+                  if (cleanTitle.includes(cleanQuery) || cleanDesc.includes(cleanQuery)) {
+                    // Double check - make sure it's a complete phrase, not part of another word
+                    const titleRegex = new RegExp(`\\b${cleanQuery.replace(/\s+/g, '\\s+')}\\b`, 'i');
+                    const descRegex = new RegExp(`\\b${cleanQuery.replace(/\s+/g, '\\s+')}\\b`, 'i');
+                    
+                    if (titleRegex.test(cleanTitle)) {
+                      matchPriority = 1000; // EXACT phrase in title
+                    } else if (descRegex.test(cleanDesc)) {
+                      matchPriority = 500;  // EXACT phrase in description
+                    }
                   }
-                  // 2. ALL query words must be found as complete words
-                  else if (queryWords.every(qWord => titleWords.some(tWord => tWord === qWord))) {
-                    matchPriority = 100;
-                  } else if (queryWords.every(qWord => descWords.some(dWord => dWord === qWord))) {
-                    matchPriority = 50;
-                  }
-                  // 3. If it's a single word, it must match exactly
+                  // 2. IF SINGLE WORD - must match EXACTLY as whole word
                   else if (queryWords.length === 1) {
-                    if (titleWords.includes(queryLower) || descWords.includes(queryLower)) {
+                    const singleWord = queryWords[0];
+                    if (titleWords.includes(singleWord)) {
+                      matchPriority = 100;
+                    } else if (descWords.includes(singleWord)) {
+                      matchPriority = 50;
+                    }
+                  }
+                  // 3. MULTI-WORD - ALL words must be present as separate complete words
+                  else if (queryWords.length > 1) {
+                    const allWordsInTitle = queryWords.every(qWord => titleWords.includes(qWord));
+                    const allWordsInDesc = queryWords.every(qWord => descWords.includes(qWord));
+                    
+                    if (allWordsInTitle) {
+                      matchPriority = 75;
+                    } else if (allWordsInDesc) {
                       matchPriority = 25;
                     }
                   }
