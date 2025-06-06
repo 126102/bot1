@@ -368,7 +368,7 @@ async function scrapeRealNews(query, category) {
         let foundInThisSource = 0;
         
         $('item').each((i, elem) => {
-          if (i >= 40) return false; // Limit per source
+          if (i >= 50) return false; // Increased limit to 50 per source
           
           const title = $(elem).find('title').text().trim();
           const link = $(elem).find('link').text().trim();
@@ -639,8 +639,8 @@ async function fetchEnhancedContent(category, userId = null) {
       return new Date(b.timestamp) - new Date(a.timestamp);
     });
     
-    // Return reasonable number of articles
-    const finalArticles = uniqueArticles.slice(0, 25);
+    // Return more articles (increased to 50)
+    const finalArticles = uniqueArticles.slice(0, 50);
     
     console.log(`✅ FINAL: ${finalArticles.length} unique articles for ${category}`);
     
@@ -836,8 +836,8 @@ async function formatAndSendNewsMessage(chatId, articles, category, bot) {
     await bot.sendMessage(chatId, summaryMessage, { parse_mode: 'Markdown' });
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    // Send articles in chunks
-    const chunkSize = 4;
+    // Send articles in chunks (increased chunk size for more articles)
+    const chunkSize = 5;
     const totalChunks = Math.ceil(articles.length / chunkSize);
     
     for (let i = 0; i < totalChunks; i++) {
