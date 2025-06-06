@@ -319,10 +319,22 @@ async function scrapeRealNews(query, category) {
             const descLower = description.toLowerCase();
             const queryLower = query.toLowerCase();
             
-            // Check if title or description contains EXACT keyword
-            const hasExactMatch = titleLower.includes(queryLower) || descLower.includes(queryLower);
-            
-            if (hasExactMatch) {
+            // FLEXIBLE keyword matching - not too strict
+            const queryWords = queryLower.split(' ').filter(word => word.length > 2);
+
+            // Check multiple ways to match
+            let hasMatch = false;
+
+            // 1. Exact full match (best)
+            if (titleLower.includes(queryLower) || descLower.includes(queryLower)) {
+              hasMatch = true;
+            } 
+            // 2. Individual words match (flexible)
+            else if (queryWords.some(word => titleLower.includes(word) || descLower.includes(word))) {
+              hasMatch = true;
+            }
+
+            if (hasMatch) {
               let articleDate = new Date();
               if (pubDate) {
                 const parsedDate = new Date(pubDate);
