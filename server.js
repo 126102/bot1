@@ -389,17 +389,32 @@ async function scrapeRealNews(query, category) {
                   const conspiracyScore = calculateConspiracyScore(cleanTitle, description);
                   const importanceScore = calculateImportanceScore(cleanTitle, description);
                   
+                  // SUPER STRICT matching - NO partial word matches
                   let matchPriority = 0;
-                  if (titleLower.includes(queryLower)) {
-                    matchPriority = 1000; // Exact match in title (TOP PRIORITY)
-                  } else if (descLower.includes(queryLower)) {
-                    matchPriority = 500;  // Exact match in description (HIGH)
-                  } else if (queryWords.some(word => titleLower.includes(word))) {
-                    matchPriority = 100;  // Word match in title (MEDIUM)
-                  } else if (queryWords.some(word => descLower.includes(word))) {
-                    matchPriority = 50;   // Word match in description (LOW)
-                  }
                   
+                  // Create word boundaries for exact matching
+                  const titleWords = titleLower.split(/\s+/);
+                  const descWords = descLower.split(/\s+/);
+                  const queryWords = queryLower.split(/\s+/);
+                  
+                  // 1. Exact full phrase match (highest priority)
+                  if (titleLower.includes(queryLower)) {
+                    matchPriority = 1000;
+                  } else if (descLower.includes(queryLower)) {
+                    matchPriority = 500;
+                  }
+                  // 2. ALL query words must be found as complete words
+                  else if (queryWords.every(qWord => titleWords.some(tWord => tWord === qWord))) {
+                    matchPriority = 100;
+                  } else if (queryWords.every(qWord => descWords.some(dWord => dWord === qWord))) {
+                    matchPriority = 50;
+                  }
+                  // 3. If it's a single word, it must match exactly
+                  else if (queryWords.length === 1) {
+                    if (titleWords.includes(queryLower) || descWords.includes(queryLower)) {
+                      matchPriority = 25;
+                    }
+                  }
                   articles.push({
                     title: cleanTitle,
                     link: realUrl,
