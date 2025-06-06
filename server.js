@@ -1,785 +1,4 @@
-*🛠️ Keyword Management:*
-/addkeyword <category> <keyword> - Add custom keywords
-/listkeywords - View all your keywords  
-/removekeyword <category> <keyword> - Remove keywords
-
-*📊 Analytics & Info:*
-/mystats - Your usage statistics
-/refresh - Force refresh all sources
-/help - This complete menu
-
-*Example Commands:*
-• /addkeyword youtubers CarryMinati controversy
-• /search Elvish Yadav drama
-• /spicy YouTube scandal
-
-🎬 *Get the SPICIEST content for your channel!*`;
-    
-    try {
-      await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'start', 'general', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Start command error:', error);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/youtubers/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startTime = Date.now();
-    
-    const rateLimitCheck = checkUserRateLimit(userId, 'youtubers');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    try {
-      await bot.sendMessage(chatId, `🎥 *Getting YouTuber news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-      
-      const news = await fetchEnhancedContent('youtubers', userId);
-      
-      if (news.length > 0) {
-        newsCache = newsCache.filter(article => article.category !== 'youtubers');
-        newsCache.push(...news);
-        await formatAndSendNewsMessage(chatId, news, 'YouTuber', bot);
-        
-        const responseTime = Date.now() - startTime;
-        try {
-          await database.logAnalytics(userId, 'youtubers', 'youtubers', responseTime);
-        } catch (dbError) {
-          console.warn('Analytics failed:', dbError.message);
-        }
-      } else {
-        const fallbackContent = createFallbackContent('youtubers');
-        await formatAndSendNewsMessage(chatId, fallbackContent, 'YouTuber', bot);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('YouTuber command error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching YouTuber news. Try /addkeyword youtubers <creator_name>`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/bollywood/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startTime = Date.now();
-    
-    const rateLimitCheck = checkUserRateLimit(userId, 'bollywood');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    try {
-      await bot.sendMessage(chatId, `🎭 *Getting Bollywood news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-      
-      const news = await fetchEnhancedContent('bollywood', userId);
-      const bollywoodNews = news.length > 0 ? news : createFallbackContent('bollywood');
-      
-      newsCache = newsCache.filter(article => article.category !== 'bollywood');
-      newsCache.push(...bollywoodNews);
-      
-      await formatAndSendNewsMessage(chatId, bollywoodNews, 'Bollywood', bot);
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'bollywood', 'bollywood', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Bollywood command error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching Bollywood news. Try again.`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/cricket/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startTime = Date.now();
-    
-    const rateLimitCheck = checkUserRateLimit(userId, 'cricket');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    try {
-      await bot.sendMessage(chatId, `🏏 *Getting Cricket news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-      
-      const news = await fetchEnhancedContent('cricket', userId);
-      const cricketNews = news.length > 0 ? news : createFallbackContent('cricket');
-      
-      newsCache = newsCache.filter(article => article.category !== 'cricket');
-      newsCache.push(...cricketNews);
-      
-      await formatAndSendNewsMessage(chatId, cricketNews, 'Cricket', bot);
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'cricket', 'cricket', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Cricket command error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching Cricket news. Try again.`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/national/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startTime = Date.now();
-    
-    const rateLimitCheck = checkUserRateLimit(userId, 'national');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    try {
-      await bot.sendMessage(chatId, `🇮🇳 *Getting National news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-      
-      const news = await fetchEnhancedContent('national', userId);
-      const nationalNews = news.length > 0 ? news : createFallbackContent('national');
-      
-      newsCache = newsCache.filter(article => article.category !== 'national');
-      newsCache.push(...nationalNews);
-      
-      await formatAndSendNewsMessage(chatId, nationalNews, 'National', bot);
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'national', 'national', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('National command error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching National news. Try again.`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/pakistan/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startTime = Date.now();
-    
-    const rateLimitCheck = checkUserRateLimit(userId, 'pakistan');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    try {
-      await bot.sendMessage(chatId, `🇵🇰 *Getting Pakistan news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-      
-      const news = await fetchEnhancedContent('pakistan', userId);
-      const pakistanNews = news.length > 0 ? news : createFallbackContent('pakistan');
-      
-      newsCache = newsCache.filter(article => article.category !== 'pakistan');
-      newsCache.push(...pakistanNews);
-      
-      await formatAndSendNewsMessage(chatId, pakistanNews, 'Pakistani', bot);
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'pakistan', 'pakistan', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Pakistan command error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching Pakistan news. Try again.`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/latest/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startTime = Date.now();
-    
-    try {
-      await bot.sendMessage(chatId, '🔄 *Getting top-scored content from all categories...*', { parse_mode: 'Markdown' });
-      
-      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
-      const allNews = [];
-      
-      for (const category of categories) {
-        try {
-          const categoryNews = await fetchEnhancedContent(category, userId);
-          allNews.push(...categoryNews);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        } catch (error) {
-          console.error(`Error fetching ${category}:`, error.message);
-        }
-      }
-      
-      const topNews = allNews.sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0)).slice(0, 20);
-      
-      if (topNews.length > 0) {
-        await formatAndSendNewsMessage(chatId, topNews, 'Latest Top', bot);
-      } else {
-        await bot.sendMessage(chatId, `❌ No recent news found. Add keywords first.`);
-      }
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'latest', 'all', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Latest command error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching latest news`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/search (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const searchTerm = match[1].trim();
-    const startTime = Date.now();
-    
-    const rateLimitCheck = checkUserRateLimit(userId, 'search');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    if (searchTerm.length < 2) {
-      await bot.sendMessage(chatId, `❌ Search term too short!\n\n*Usage:* /search <term>\n*Example:* /search Elvish Yadav`);
-      return;
-    }
-
-    try {
-      await bot.sendMessage(chatId, `🔍 *SEARCH: "${searchTerm}"*\n\n🌐 Searching...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-
-      const searchResults = await scrapeRealNews(searchTerm, categorizeNews(searchTerm));
-      
-      if (searchResults.length === 0) {
-        await bot.sendMessage(chatId, `❌ No results found for "${searchTerm}"`);
-        return;
-      }
-
-      await formatAndSendNewsMessage(chatId, searchResults, `Search: ${searchTerm}`, bot);
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'search', 'search', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-
-    } catch (error) {
-      console.error(`Search error: ${error.message}`);
-      await bot.sendMessage(chatId, `❌ Search failed. Try again.`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/spicy (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const searchTerm = match[1].trim();
-    const startTime = Date.now();
-    
-    const rateLimitCheck = checkUserRateLimit(userId, 'spicy');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    if (searchTerm.length < 2) {
-      await bot.sendMessage(chatId, `❌ Search term too short!\n\n*Usage:* /spicy <term>\n*Example:* /spicy YouTube drama`);
-      return;
-    }
-
-    try {
-      await bot.sendMessage(chatId, `🌶️ *SPICY SEARCH: "${searchTerm}"*\n\n🔥 Finding controversy...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-
-      const searchResults = await scrapeRealNews(searchTerm, categorizeNews(searchTerm));
-      const spicyResults = searchResults.filter(article => (article.spiceScore || 0) >= 6);
-      
-      if (spicyResults.length === 0) {
-        await bot.sendMessage(chatId, `❌ No spicy content found for "${searchTerm}"`);
-        return;
-      }
-
-      await formatAndSendNewsMessage(chatId, spicyResults, `Spicy: ${searchTerm}`, bot);
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'spicy', 'search', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-
-    } catch (error) {
-      console.error(`Spicy search error: ${error.message}`);
-      await bot.sendMessage(chatId, `❌ Spicy search failed. Try again.`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/addkeyword (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const input = match[1].trim();
-    const parts = input.split(' ');
-    
-    if (parts.length < 2) {
-      await bot.sendMessage(chatId, `❌ *Usage:* /addkeyword <category> <keyword>
-
-*Categories:* youtubers, bollywood, cricket, national, pakistan
-
-*Examples:*
-• /addkeyword youtubers CarryMinati
-• /addkeyword bollywood Salman Khan
-• /addkeyword cricket Virat Kohli`, { parse_mode: 'Markdown' });
-      return;
-    }
-    
-    const category = parts[0].toLowerCase();
-    const keyword = parts.slice(1).join(' ');
-    
-    if (!ENHANCED_SEARCH_KEYWORDS[category]) {
-      await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
-      return;
-    }
-    
-    try {
-      const existingKeywords = await database.getUserKeywords(userId, category);
-      const keywordExists = existingKeywords.some(k => k.keyword.toLowerCase() === keyword.toLowerCase());
-      
-      if (keywordExists) {
-        await bot.sendMessage(chatId, `⚠️ Already exists! "${keyword}" is already in your ${category} keywords`);
-        return;
-      }
-      
-      await database.addUserKeyword(userId, category, keyword, 5);
-      
-      const totalKeywords = existingKeywords.length + 1;
-      
-      await bot.sendMessage(chatId, `✅ *Keyword Added Successfully!*
-
-📝 *Added:* "${keyword}"
-📂 *Category:* ${category}
-📊 *Your total keywords:* ${totalKeywords}
-
-🚀 Use /${category} to see results with your keyword!`, { parse_mode: 'Markdown' });
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Add keyword error:', error);
-      await bot.sendMessage(chatId, `❌ Error adding keyword. Try again.`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/listkeywords/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    
-    try {
-      let message = '📝 *YOUR CUSTOM KEYWORDS*\n\n';
-      let totalKeywords = 0;
-      
-      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
-      
-      for (const category of categories) {
-        try {
-          const userKeywords = await database.getUserKeywords(userId, category);
-          const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
-          
-          message += `${icon} *${category.toUpperCase()}* (${userKeywords.length}):\n`;
-          
-          if (userKeywords.length > 0) {
-            userKeywords.forEach((k, index) => {
-              message += `${index + 1}. ${k.keyword}\n`;
-            });
-          } else {
-            message += `• No keywords yet\n`;
-          }
-          message += '\n';
-          totalKeywords += userKeywords.length;
-        } catch (categoryError) {
-          console.error(`Error fetching ${category} keywords:`, categoryError);
-        }
-      }
-      
-      message += `📊 *Total Keywords:* ${totalKeywords}\n\n`;
-      message += `💡 *Add more:* /addkeyword <category> <keyword>\n`;
-      message += `🗑️ *Remove:* /removekeyword <category> <keyword>`;
-      
-      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('List keywords error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching keywords. Try again.`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/removekeyword (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const input = match[1].trim();
-    const parts = input.split(' ');
-    
-    if (parts.length < 2) {
-      await bot.sendMessage(chatId, `❌ *Usage:* /removekeyword <category> <keyword>
-
-*Example:* /removekeyword youtubers CarryMinati`);
-      return;
-    }
-    
-    const category = parts[0].toLowerCase();
-    const keyword = parts.slice(1).join(' ');
-    
-    if (!ENHANCED_SEARCH_KEYWORDS[category]) {
-      await bot.sendMessage(chatId, `❌ Invalid category!`);
-      return;
-    }
-    
-    try {
-      const removed = await new Promise((resolve, reject) => {
-        database.db.run(
-          'DELETE FROM user_keywords WHERE user_id = ? AND category = ? AND keyword = ?',
-          [userId, category, keyword],
-          function(err) {
-            if (err) reject(err);
-            else resolve(this.changes > 0);
-          }
-        );
-      });
-      
-      if (!removed) {
-        await bot.sendMessage(chatId, `❌ Not found! "${keyword}" is not in your ${category} keywords`);
-        return;
-      }
-      
-      await bot.sendMessage(chatId, `✅ *Keyword Removed Successfully!*
-
-🗑️ *Removed:* "${keyword}"
-📂 *Category:* ${category}`, { parse_mode: 'Markdown' });
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Remove keyword error:', error);
-      await bot.sendMessage(chatId, `❌ Error removing keyword. Try again.`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/mystats/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    
-    try {
-      const userStats = await new Promise((resolve, reject) => {
-        database.db.all(
-          `SELECT command, COUNT(*) as count, AVG(response_time) as avg_time
-           FROM bot_analytics 
-           WHERE user_id = ? 
-           GROUP BY command 
-           ORDER BY count DESC`,
-          [userId],
-          (err, rows) => {
-            if (err) reject(err);
-            else resolve(rows);
-          }
-        );
-      });
-      
-      let message = `📊 *YOUR USAGE STATISTICS*\n\n`;
-      
-      if (userStats.length === 0) {
-        message += `📈 *No usage data yet*\n\nStart using commands to see your stats!`;
-      } else {
-        const totalRequests = userStats.reduce((sum, stat) => sum + stat.count, 0);
-        const avgResponseTime = userStats.length > 0 ? Math.round(userStats.reduce((sum, stat) => sum + (stat.avg_time * stat.count), 0) / totalRequests) : 0;
-        
-        message += `🎯 *Total Requests:* ${totalRequests}\n`;
-        message += `⚡ *Avg Response Time:* ${avgResponseTime}ms\n\n`;
-        message += `📋 *Command Usage:*\n`;
-        
-        userStats.slice(0, 10).forEach(stat => {
-          const icon = stat.command === 'youtubers' ? '📱' : stat.command === 'bollywood' ? '🎬' : stat.command === 'cricket' ? '🏏' : stat.command === 'pakistan' ? '🇵🇰' : '🔍';
-          message += `${icon} /${stat.command}: ${stat.count} times\n`;
-        });
-        
-        const mostUsed = userStats[0];
-        message += `\n🏆 *Most Used:* /${mostUsed.command} (${mostUsed.count} times)`;
-      }
-      
-      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('User stats error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching statistics`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/refresh/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startTime = Date.now();
-    
-    const rateLimitCheck = checkUserRateLimit(userId, 'refresh');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    try {
-      await bot.sendMessage(chatId, `🔄 *Refreshing sources...*\n\n⏳ Getting latest content`, { parse_mode: 'Markdown' });
-      
-      newsCache = [];
-      
-      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
-      const allNews = [];
-      
-      for (const category of categories) {
-        try {
-          const categoryNews = await fetchEnhancedContent(category, userId);
-          allNews.push(...categoryNews);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        } catch (error) {
-          console.error(`Error refreshing ${category}:`, error.message);
-        }
-      }
-      
-      newsCache = allNews;
-      
-      await bot.sendMessage(chatId, `✅ *Refresh Complete!*
-
-📊 *Articles found:* ${newsCache.length}
-🕐 *Completed:* ${getCurrentIndianTime().toLocaleString('en-IN')}`, { parse_mode: 'Markdown' });
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'refresh', 'all', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Refresh error:', error);
-      await bot.sendMessage(chatId, `❌ Refresh failed. Try again later.`);
-      botStats.errors++;
-    }
-  });
-
-  bot.onText(/\/help/, async (msg) => {
-    const chatId = msg.chat.id;
-    
-    const helpMessage = `⚙️ *BOT HELP*
-
-*🎯 News Commands:*
-/youtubers - YouTube news 🎥
-/bollywood - Bollywood news 🎭
-/cricket - Cricket news 🏏
-/national - National news 🇮🇳
-/pakistan - Pakistan news 🇵🇰
-/latest - Top content 🔥
-
-*🔍 Search Commands:*
-/search <term> - Search news
-/spicy <term> - Spicy content only
-
-*🛠️ Keywords:*
-/addkeyword <category> <keyword>
-/listkeywords
-/removekeyword <category> <keyword>
-
-*📊 Other:*
-/mystats - Your stats
-/refresh - Refresh sources
-/help - This menu
-
-*Example:*
-/addkeyword youtubers CarryMinati
-
-🔥 Only YOUR keywords are searched!`;
-
-    await bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
-  });
-}
-
-app.get('/', (req, res) => {
-  const uptime = Math.floor(process.uptime());
-  res.json({ 
-    status: 'Enhanced Viral News Bot v3.0',
-    version: '3.0.0',
-    uptime: uptime,
-    totalRequests: botStats.totalRequests,
-    features: 'User keywords only, 50 articles max, 24h filter, direct links'
-  });
-});
-
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy',
-    newsCount: newsCache.length,
-    uptime: process.uptime(),
-    totalRequests: botStats.totalRequests,
-    errors: botStats.errors
-  });
-});
-
-app.get('/ping', (req, res) => {
-  botStats.totalRequests++;
-  res.json({ 
-    status: 'pong',
-    timestamp: getCurrentIndianTime().toLocaleString('en-IN'),
-    version: '3.0.0'
-  });
-});
-
-async function enhancedCleanup() {
-  try {
-    const expiryTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const initialCount = newsCache.length;
-    
-    newsCache = newsCache.filter(article => {
-      const articleDate = new Date(article.timestamp);
-      return articleDate > expiryTime;
-    });
-    
-    console.log(`🧹 Cleanup: Removed ${initialCount - newsCache.length} old articles`);
-  } catch (error) {
-    console.error('Cleanup error:', error);
-  }
-}
-
-async function enhancedKeepAlive() {
-  try {
-    if (APP_URL && !APP_URL.includes('localhost')) {
-      const response = await axios.get(`${APP_URL}/ping`, { timeout: 10000 });
-      console.log(`🏓 Keep-alive successful`);
-    }
-  } catch (error) {
-    console.warn(`⚠️ Keep-alive failed: ${error.message}`);
-    botStats.errors++;
-  }
-}
-
-setInterval(enhancedKeepAlive, 12 * 60 * 1000);
-setInterval(enhancedCleanup, 30 * 60 * 1000);
-
-setTimeout(() => {
-  console.log('🚀 Bot fully loaded!');
-}, 3000);
-
-app.listen(PORT, () => {
-  console.log(`🚀 Bot running on port ${PORT}`);
-  console.log(`🌐 URL: ${APP_URL}`);
-  console.log(`📱 Bot: ${BOT_TOKEN ? 'Active' : 'Missing Token'}`);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection:', reason);
-  botStats.errors++;
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
-  botStats.errors++;
-  setTimeout(() => process.exit(1), 5000);
-});
-
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received');
-  if (database && database.db) {
-    database.db.close((err) => {
-      if (err) {
-        console.error('Database close error:', err);
-      } else {
-        console.log('Database closed successfully');
-      }
-      process.exit(0);
-    });
-  } else {
-    process.exit(0);
-  }
-});
-
-module.exports = { 
-  app, 
-  bot, 
-  database,
-  calculateSpiceScore,
-  calculateConspiracyScore,
-  calculateImportanceScore,
-  categorizeNews,
-  checkUserRateLimit,
-  formatNewsDate,
-  getCurrentIndianTime,
-  getCurrentTimestamp,
-  ENHANCED_SEARCH_KEYWORDS
-};const TelegramBot = require('node-telegram-bot-api');
+const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const express = require('express');
@@ -791,9 +10,6 @@ const Filter = require('bad-words');
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const isProduction = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT || 3000;
-
-console.log('🚀 Starting bot...');
-console.log('BOT_TOKEN exists:', !!BOT_TOKEN);
 
 let APP_URL;
 if (process.env.RENDER_EXTERNAL_URL) {
@@ -807,7 +23,6 @@ if (process.env.RENDER_EXTERNAL_URL) {
 }
 
 const filter = new Filter();
-
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.simple(),
@@ -890,7 +105,6 @@ class NewsDatabase {
 }
 
 const database = new NewsDatabase();
-
 const bot = BOT_TOKEN ? new TelegramBot(BOT_TOKEN, { 
   polling: !isProduction,
   webHook: isProduction 
@@ -1390,6 +604,7 @@ async function formatAndSendNewsMessage(chatId, articles, category, bot) {
   }
 }
 
+// Webhook setup for production
 if (bot && isProduction) {
   const webhookPath = `/webhook/${BOT_TOKEN}`;
   const webhookUrl = `${APP_URL}${webhookPath}`;
@@ -1411,6 +626,7 @@ if (bot && isProduction) {
   });
 }
 
+// Bot error handling
 if (bot) {
   bot.on('polling_error', error => {
     console.error('Telegram polling error:', error.message);
@@ -1420,6 +636,7 @@ if (bot) {
     console.error('Webhook error:', error.message);
   });
 
+  // Command: /start
   bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1442,4 +659,804 @@ if (bot) {
 *🛠️ Keyword Management:*
 /addkeyword <category> <keyword> - Add custom keywords
 /listkeywords - View all your keywords  
-/removekeyword <category>
+/removekeyword <category> <keyword> - Remove keywords
+
+*📊 Analytics & Info:*
+/mystats - Your usage statistics
+/refresh - Force refresh all sources
+/help - This complete menu
+
+*Example Commands:*
+• /addkeyword youtubers CarryMinati controversy
+• /search Elvish Yadav drama
+• /spicy YouTube scandal
+
+🎬 *Get the SPICIEST content for your channel!*`;
+    
+    try {
+      await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'start', 'general', responseTime);
+      } catch (dbError) {
+        console.warn('Analytics failed:', dbError.message);
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Start command error:', error);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /youtubers
+  bot.onText(/\/youtubers/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'youtubers');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
+      return;
+    }
+    
+    try {
+      await bot.sendMessage(chatId, `🎥 *Getting YouTuber news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+      
+      const news = await fetchEnhancedContent('youtubers', userId);
+      
+      if (news.length > 0) {
+        newsCache = newsCache.filter(article => article.category !== 'youtubers');
+        newsCache.push(...news);
+        await formatAndSendNewsMessage(chatId, news, 'YouTuber', bot);
+        
+        const responseTime = Date.now() - startTime;
+        try {
+          await database.logAnalytics(userId, 'youtubers', 'youtubers', responseTime);
+        } catch (dbError) {
+          console.warn('Analytics failed:', dbError.message);
+        }
+      } else {
+        const fallbackContent = createFallbackContent('youtubers');
+        await formatAndSendNewsMessage(chatId, fallbackContent, 'YouTuber', bot);
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('YouTuber command error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching YouTuber news. Try /addkeyword youtubers <creator_name>`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /bollywood
+  bot.onText(/\/bollywood/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'bollywood');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
+      return;
+    }
+    
+    try {
+      await bot.sendMessage(chatId, `🎭 *Getting Bollywood news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+      
+      const news = await fetchEnhancedContent('bollywood', userId);
+      const bollywoodNews = news.length > 0 ? news : createFallbackContent('bollywood');
+      
+      newsCache = newsCache.filter(article => article.category !== 'bollywood');
+      newsCache.push(...bollywoodNews);
+      
+      await formatAndSendNewsMessage(chatId, bollywoodNews, 'Bollywood', bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'bollywood', 'bollywood', responseTime);
+      } catch (dbError) {
+        console.warn('Analytics failed:', dbError.message);
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Bollywood command error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching Bollywood news. Try again.`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /cricket
+  bot.onText(/\/cricket/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'cricket');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
+      return;
+    }
+    
+    try {
+      await bot.sendMessage(chatId, `🏏 *Getting Cricket news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+      
+      const news = await fetchEnhancedContent('cricket', userId);
+      const cricketNews = news.length > 0 ? news : createFallbackContent('cricket');
+      
+      newsCache = newsCache.filter(article => article.category !== 'cricket');
+      newsCache.push(...cricketNews);
+      
+      await formatAndSendNewsMessage(chatId, cricketNews, 'Cricket', bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'cricket', 'cricket', responseTime);
+      } catch (dbError) {
+        console.warn('Analytics failed:', dbError.message);
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Cricket command error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching Cricket news. Try again.`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /national
+  bot.onText(/\/national/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'national');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
+      return;
+    }
+    
+    try {
+      await bot.sendMessage(chatId, `🇮🇳 *Getting National news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+      
+      const news = await fetchEnhancedContent('national', userId);
+      const nationalNews = news.length > 0 ? news : createFallbackContent('national');
+      
+      newsCache = newsCache.filter(article => article.category !== 'national');
+      newsCache.push(...nationalNews);
+      
+      await formatAndSendNewsMessage(chatId, nationalNews, 'National', bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'national', 'national', responseTime);
+      } catch (dbError) {
+        console.warn('Analytics failed:', dbError.message);
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('National command error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching National news. Try again.`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /pakistan
+  bot.onText(/\/pakistan/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'pakistan');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
+      return;
+    }
+    
+    try {
+      await bot.sendMessage(chatId, `🇵🇰 *Getting Pakistan news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+      
+      const news = await fetchEnhancedContent('pakistan', userId);
+      const pakistanNews = news.length > 0 ? news : createFallbackContent('pakistan');
+      
+      newsCache = newsCache.filter(article => article.category !== 'pakistan');
+      newsCache.push(...pakistanNews);
+      
+      await formatAndSendNewsMessage(chatId, pakistanNews, 'Pakistani', bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'pakistan', 'pakistan', responseTime);
+      } catch (dbError) {
+        console.warn('Analytics failed:', dbError.message);
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Pakistan command error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching Pakistan news. Try again.`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /latest
+  bot.onText(/\/latest/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    try {
+      await bot.sendMessage(chatId, '🔄 *Getting top-scored content from all categories...*', { parse_mode: 'Markdown' });
+      
+      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+      const allNews = [];
+      
+      for (const category of categories) {
+        try {
+          const categoryNews = await fetchEnhancedContent(category, userId);
+          allNews.push(...categoryNews);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error(`Error fetching ${category}:`, error.message);
+        }
+      }
+      
+      const topNews = allNews.sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0)).slice(0, 20);
+      
+      if (topNews.length > 0) {
+        await formatAndSendNewsMessage(chatId, topNews, 'Latest Top', bot);
+      } else {
+        await bot.sendMessage(chatId, `❌ No recent news found. Add keywords first.`);
+      }
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'latest', 'all', responseTime);
+      } catch (dbError) {
+        console.warn('Analytics failed:', dbError.message);
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Latest command error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching latest news`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /search
+  bot.onText(/\/search (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const searchTerm = match[1].trim();
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'search');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
+      return;
+    }
+    
+    if (searchTerm.length < 2) {
+      await bot.sendMessage(chatId, `❌ Search term too short!\n\n*Usage:* /search <term>\n*Example:* /search Elvish Yadav`);
+      return;
+    }
+
+    try {
+      await bot.sendMessage(chatId, `🔍 *SEARCH: "${searchTerm}"*\n\n🌐 Searching...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+
+      const searchResults = await scrapeRealNews(searchTerm, categorizeNews(searchTerm));
+      
+      if (searchResults.length === 0) {
+        await bot.sendMessage(chatId, `❌ No results found for "${searchTerm}"`);
+        return;
+      }
+
+      await formatAndSendNewsMessage(chatId, searchResults, `Search: ${searchTerm}`, bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'search', 'search', responseTime);
+      } catch (dbError) {
+        console.warn('Analytics failed:', dbError.message);
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+
+    } catch (error) {
+      console.error(`Search error: ${error.message}`);
+      await bot.sendMessage(chatId, `❌ Search failed. Try again.`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /spicy
+  bot.onText(/\/spicy (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const searchTerm = match[1].trim();
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'spicy');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
+      return;
+    }
+    
+    if (searchTerm.length < 2) {
+      await bot.sendMessage(chatId, `❌ Search term too short!\n\n*Usage:* /spicy <term>\n*Example:* /spicy YouTube drama`);
+      return;
+    }
+
+    try {
+      await bot.sendMessage(chatId, `🌶️ *SPICY SEARCH: "${searchTerm}"*\n\n🔥 Finding controversy...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+
+      const searchResults = await scrapeRealNews(searchTerm, categorizeNews(searchTerm));
+      const spicyResults = searchResults.filter(article => (article.spiceScore || 0) >= 6);
+      
+      if (spicyResults.length === 0) {
+        await bot.sendMessage(chatId, `❌ No spicy content found for "${searchTerm}"`);
+        return;
+      }
+
+      await formatAndSendNewsMessage(chatId, spicyResults, `Spicy: ${searchTerm}`, bot);
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'spicy', 'search', responseTime);
+      } catch (dbError) {
+        console.warn('Analytics failed:', dbError.message);
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+
+    } catch (error) {
+      console.error(`Spicy search error: ${error.message}`);
+      await bot.sendMessage(chatId, `❌ Spicy search failed. Try again.`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /addkeyword
+  bot.onText(/\/addkeyword (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const input = match[1].trim();
+    const parts = input.split(' ');
+    
+    if (parts.length < 2) {
+      await bot.sendMessage(chatId, `❌ *Usage:* /addkeyword <category> <keyword>
+
+*Categories:* youtubers, bollywood, cricket, national, pakistan
+
+*Examples:*
+• /addkeyword youtubers CarryMinati
+• /addkeyword bollywood Salman Khan
+• /addkeyword cricket Virat Kohli`, { parse_mode: 'Markdown' });
+      return;
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keyword = parts.slice(1).join(' ');
+    
+    if (!ENHANCED_SEARCH_KEYWORDS[category]) {
+      await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
+      return;
+    }
+    
+    try {
+      const existingKeywords = await database.getUserKeywords(userId, category);
+      const keywordExists = existingKeywords.some(k => k.keyword.toLowerCase() === keyword.toLowerCase());
+      
+      if (keywordExists) {
+        await bot.sendMessage(chatId, `⚠️ Already exists! "${keyword}" is already in your ${category} keywords`);
+        return;
+      }
+      
+      await database.addUserKeyword(userId, category, keyword, 5);
+      
+      const totalKeywords = existingKeywords.length + 1;
+      
+      await bot.sendMessage(chatId, `✅ *Keyword Added Successfully!*
+
+📝 *Added:* "${keyword}"
+📂 *Category:* ${category}
+📊 *Your total keywords:* ${totalKeywords}
+
+🚀 Use /${category} to see results with your keyword!`, { parse_mode: 'Markdown' });
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Add keyword error:', error);
+      await bot.sendMessage(chatId, `❌ Error adding keyword. Try again.`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /listkeywords
+  bot.onText(/\/listkeywords/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    try {
+      let message = '📝 *YOUR CUSTOM KEYWORDS*\n\n';
+      let totalKeywords = 0;
+      
+      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+      
+      for (const category of categories) {
+        try {
+          const userKeywords = await database.getUserKeywords(userId, category);
+          const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
+          
+          message += `${icon} *${category.toUpperCase()}* (${userKeywords.length}):\n`;
+          
+          if (userKeywords.length > 0) {
+            userKeywords.forEach((k, index) => {
+              message += `${index + 1}. ${k.keyword}\n`;
+            });
+          } else {
+            message += `• No keywords yet\n`;
+          }
+          message += '\n';
+          totalKeywords += userKeywords.length;
+        } catch (categoryError) {
+          console.error(`Error fetching ${category} keywords:`, categoryError);
+        }
+      }
+      
+      message += `📊 *Total Keywords:* ${totalKeywords}\n\n`;
+      message += `💡 *Add more:* /addkeyword <category> <keyword>\n`;
+      message += `🗑️ *Remove:* /removekeyword <category> <keyword>`;
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('List keywords error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching keywords. Try again.`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /removekeyword
+  bot.onText(/\/removekeyword (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const input = match[1].trim();
+    const parts = input.split(' ');
+    
+    if (parts.length < 2) {
+      await bot.sendMessage(chatId, `❌ *Usage:* /removekeyword <category> <keyword>
+
+*Example:* /removekeyword youtubers CarryMinati`);
+      return;
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keyword = parts.slice(1).join(' ');
+    
+    if (!ENHANCED_SEARCH_KEYWORDS[category]) {
+      await bot.sendMessage(chatId, `❌ Invalid category!`);
+      return;
+    }
+    
+    try {
+      const removed = await new Promise((resolve, reject) => {
+        database.db.run(
+          'DELETE FROM user_keywords WHERE user_id = ? AND category = ? AND keyword = ?',
+          [userId, category, keyword],
+          function(err) {
+            if (err) reject(err);
+            else resolve(this.changes > 0);
+          }
+        );
+      });
+      
+      if (!removed) {
+        await bot.sendMessage(chatId, `❌ Not found! "${keyword}" is not in your ${category} keywords`);
+        return;
+      }
+      
+      await bot.sendMessage(chatId, `✅ *Keyword Removed Successfully!*
+
+🗑️ *Removed:* "${keyword}"
+📂 *Category:* ${category}`, { parse_mode: 'Markdown' });
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Remove keyword error:', error);
+      await bot.sendMessage(chatId, `❌ Error removing keyword. Try again.`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /mystats
+  bot.onText(/\/mystats/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    try {
+      const userStats = await new Promise((resolve, reject) => {
+        database.db.all(
+          `SELECT command, COUNT(*) as count, AVG(response_time) as avg_time
+           FROM bot_analytics 
+           WHERE user_id = ? 
+           GROUP BY command 
+           ORDER BY count DESC`,
+          [userId],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+          }
+        );
+      });
+      
+      let message = `📊 *YOUR USAGE STATISTICS*\n\n`;
+      
+      if (userStats.length === 0) {
+        message += `📈 *No usage data yet*\n\nStart using commands to see your stats!`;
+      } else {
+        const totalRequests = userStats.reduce((sum, stat) => sum + stat.count, 0);
+        const avgResponseTime = userStats.length > 0 ? Math.round(userStats.reduce((sum, stat) => sum + (stat.avg_time * stat.count), 0) / totalRequests) : 0;
+        
+        message += `🎯 *Total Requests:* ${totalRequests}\n`;
+        message += `⚡ *Avg Response Time:* ${avgResponseTime}ms\n\n`;
+        message += `📋 *Command Usage:*\n`;
+        
+        userStats.slice(0, 10).forEach(stat => {
+          const icon = stat.command === 'youtubers' ? '📱' : stat.command === 'bollywood' ? '🎬' : stat.command === 'cricket' ? '🏏' : stat.command === 'pakistan' ? '🇵🇰' : '🔍';
+          message += `${icon} /${stat.command}: ${stat.count} times\n`;
+        });
+        
+        const mostUsed = userStats[0];
+        message += `\n🏆 *Most Used:* /${mostUsed.command} (${mostUsed.count} times)`;
+      }
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('User stats error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching statistics`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /refresh
+  bot.onText(/\/refresh/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    const rateLimitCheck = checkUserRateLimit(userId, 'refresh');
+    if (!rateLimitCheck.allowed) {
+      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
+      return;
+    }
+    
+    try {
+      await bot.sendMessage(chatId, `🔄 *Refreshing sources...*\n\n⏳ Getting latest content`, { parse_mode: 'Markdown' });
+      
+      newsCache = [];
+      
+      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+      const allNews = [];
+      
+      for (const category of categories) {
+        try {
+          const categoryNews = await fetchEnhancedContent(category, userId);
+          allNews.push(...categoryNews);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error(`Error refreshing ${category}:`, error.message);
+        }
+      }
+      
+      newsCache = allNews;
+      
+      await bot.sendMessage(chatId, `✅ *Refresh Complete!*
+
+📊 *Articles found:* ${newsCache.length}
+🕐 *Completed:* ${getCurrentIndianTime().toLocaleString('en-IN')}`, { parse_mode: 'Markdown' });
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'refresh', 'all', responseTime);
+      } catch (dbError) {
+        console.warn('Analytics failed:', dbError.message);
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Refresh error:', error);
+      await bot.sendMessage(chatId, `❌ Refresh failed. Try again later.`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /help
+  bot.onText(/\/help/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    const helpMessage = `⚙️ *BOT HELP*
+
+*🎯 News Commands:*
+/youtubers - YouTube news 🎥
+/bollywood - Bollywood news 🎭
+/cricket - Cricket news 🏏
+/national - National news 🇮🇳
+/pakistan - Pakistan news 🇵🇰
+/latest - Top content 🔥
+
+*🔍 Search Commands:*
+/search <term> - Search news
+/spicy <term> - Spicy content only
+
+*🛠️ Keywords:*
+/addkeyword <category> <keyword>
+/listkeywords
+/removekeyword <category> <keyword>
+
+*📊 Other:*
+/mystats - Your stats
+/refresh - Refresh sources
+/help - This menu
+
+*Example:*
+/addkeyword youtubers CarryMinati
+
+🔥 Only YOUR keywords are searched!`;
+
+    await bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
+  });
+}
+
+// Express routes
+app.get('/', (req, res) => {
+  const uptime = Math.floor(process.uptime());
+  res.json({ 
+    status: 'Enhanced Viral News Bot v3.0',
+    version: '3.0.0',
+    uptime: uptime,
+    totalRequests: botStats.totalRequests,
+    features: 'User keywords only, 50 articles max, 24h filter, direct links'
+  });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy',
+    newsCount: newsCache.length,
+    uptime: process.uptime(),
+    totalRequests: botStats.totalRequests,
+    errors: botStats.errors
+  });
+});
+
+app.get('/ping', (req, res) => {
+  botStats.totalRequests++;
+  res.json({ 
+    status: 'pong',
+    timestamp: getCurrentIndianTime().toLocaleString('en-IN'),
+    version: '3.0.0'
+  });
+});
+
+// Enhanced cleanup function
+async function enhancedCleanup() {
+  try {
+    const expiryTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const initialCount = newsCache.length;
+    
+    newsCache = newsCache.filter(article => {
+      const articleDate = new Date(article.timestamp);
+      return articleDate > expiryTime;
+    });
+    
+    console.log(`🧹 Cleanup: Removed ${initialCount - newsCache.length} old articles`);
+  } catch (error) {
+    console.error('Cleanup error:', error);
+  }
+}
+
+// Enhanced keep-alive function
+async function enhancedKeepAlive() {
+  try {
+    if (APP_URL && !APP_URL.includes('localhost')) {
+      const response = await axios.get(`${APP_URL}/ping`, { timeout: 10000 });
+      console.log(`🏓 Keep-alive successful`);
+    }
+  } catch (error) {
+    console.warn(`⚠️ Keep-alive failed: ${error.message}`);
+    botStats.errors++;
+  }
+}
+
+// Set intervals for maintenance
+setInterval(enhancedKeepAlive, 12 * 60 * 1000); // Every 12 minutes
+setInterval(enhancedCleanup, 30 * 60 * 1000);   // Every 30 minutes
+
+// Startup delay
+setTimeout(() => {
+  console.log('🚀 Bot fully loaded!');
+}, 3000);
+
+// Start the server
+app.listen(PORT, () => {
+  console.log(`🚀 Bot running on port ${PORT}`);
+  console.log(`🌐 URL: ${APP_URL}`);
+  console.log(`📱 Bot: ${BOT_TOKEN ? 'Active' : 'Missing Token'}`);
+});
+
+// Process error handlers
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection:', reason);
+  botStats.errors++;
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  botStats.errors++;
+  setTimeout(() => process.exit(1), 5000);
+});
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received');
+  if (database && database.db) {
+    database.db.close((err) => {
+      if (err) {
+        console.error('Database close error:', err);
+      } else {
+        console.log('Database closed successfully');
+      }
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
+});
+
+// Module exports
+module.exports = { 
+  app, 
+  bot, 
+  database,
+  calculateSpiceScore,
+  calculateConspiracyScore,
+  calculateImportanceScore,
+  categorizeNews,
+  checkUserRateLimit,
+  formatNewsDate,
+  getCurrentIndianTime,
+  getCurrentTimestamp,
+  ENHANCED_SEARCH_KEYWORDS
+};
