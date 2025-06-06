@@ -129,6 +129,48 @@ let botStats = {
   startTime: Date.now()
 };
 
+const ENHANCED_RSS_SOURCES = {
+  youtubers: [
+    'https://www.tubefilter.com/feed/',
+    'https://www.dexerto.com/entertainment/feed/',
+    'https://www.insider.com/creator/rss',
+    'https://www.theverge.com/rss/index.xml',
+    'https://www.reddit.com/r/YouTubeDrama/.rss',
+    'https://www.reddit.com/r/DesiMeta/.rss'
+  ],
+  bollywood: [
+    'https://www.pinkvilla.com/rss.xml',
+    'https://www.bollywoodhungama.com/rss/entertainment-news.xml',
+    'https://www.filmfare.com/rss/news',
+    'https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms',
+    'https://www.koimoi.com/feed/',
+    'https://www.spotboye.com/feed'
+  ],
+  cricket: [
+    'https://www.cricbuzz.com/rss/news',
+    'https://www.espncricinfo.com/rss/content/story/feeds/0.xml',
+    'https://www.sportskeeda.com/feed/cricket',
+    'https://feeds.feedburner.com/ndtvsports-latest',
+    'https://www.insidesport.in/feed/'
+  ],
+  national: [
+    'https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms',
+    'https://aajtak.intoday.in/rssfeed/miscellaneous.xml',
+    'https://news.abplive.com/homepage/rss',
+    'https://thewire.in/politics/feed',
+    'https://feeds.feedburner.com/ndtv/Lsgd',
+    'https://theprint.in/feed/',
+    'https://www.opindia.com/feed/'
+  ],
+  pakistan: [
+    'https://www.dawn.com/feeds/home',
+    'https://www.thenews.com.pk/rss/1/1',
+    'https://arynews.tv/en/feed/',
+    'https://www.geo.tv/rss/1/0',
+    'https://en.dailypakistan.com.pk/feed/'
+  ]
+};
+
 const ENHANCED_SEARCH_KEYWORDS = {
   youtubers: { spicy: [] },
   bollywood: { spicy: [] },
