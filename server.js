@@ -134,14 +134,12 @@ const ENHANCED_RSS_SOURCES = {
     'https://timesofindia.indiatimes.com/rssfeeds/54829575.cms',
     'https://feeds.feedburner.com/ndtvnews-trending-news',
     'https://www.indiatoday.in/rss/1206514',
-    'https://www.india.com/rssfeeds/entertainment.xml',
     'https://news.google.com/rss/search?q=YouTubers+India&hl=en&gl=IN&ceid=IN:en'
   ],
   bollywood: [
     'https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms',
     'https://feeds.feedburner.com/ndtvnews-trending-news',
     'https://www.indiatoday.in/rss/1206514',
-    'https://www.india.com/rssfeeds/entertainment.xml',
     'https://news.google.com/rss/search?q=Bollywood+scandal&hl=en&gl=IN&ceid=IN:en'
   ],
   cricket: [
@@ -545,6 +543,24 @@ async function fetchEnhancedContent(category, userId = null) {
     console.error(`Enhanced content fetch error: ${error.message}`);
     return [];
   }
+}
+
+function createFallbackContent(category) {
+  return [{
+    title: `Add keywords to get ${category} news`,
+    link: "https://www.google.com/search?q=how+to+add+keywords",
+    pubDate: getCurrentTimestamp(),
+    formattedDate: "Now",
+    source: "Bot Help",
+    category: category,
+    timestamp: getCurrentTimestamp(),
+    spiceScore: 0,
+    conspiracyScore: 0,
+    importanceScore: 10,
+    totalScore: 10,
+    searchKeyword: "help",
+    description: `Use /addkeyword ${category} <your_keyword> to start getting news`
+  }];
 }
 
 async function removeMultipleKeywords(userId, category, keywordsString) {
@@ -1132,7 +1148,7 @@ if (bot) {
   const category = parts[0].toLowerCase();
   const keywordsPart = parts.slice(1).join(' ');
   
-  if (!ENHANCED_SEARCH_KEYWORDS[category]) {
+  if (!ENHANCED_RSS_KEYWORDS[category]) {
     await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
     return;
   }
@@ -1228,7 +1244,7 @@ if (bot) {
   const category = parts[0].toLowerCase();
   const keywordsPart = parts.slice(1).join(' ');
   
-  if (!ENHANCED_SEARCH_KEYWORDS[category]) {
+  if (!ENHANCED_RSS_KEYWORDS[category]) {
     await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
     return;
   }
