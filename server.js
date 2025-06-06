@@ -131,52 +131,36 @@ let botStats = {
 
 const ENHANCED_RSS_SOURCES = {
   youtubers: [
-    'https://www.tubefilter.com/feed/',
-    'https://www.dexerto.com/entertainment/feed/',
-    'https://www.insider.com/creator/rss',
-    'https://www.theverge.com/rss/index.xml',
-    'https://www.reddit.com/r/YouTubeDrama/.rss',
-    'https://www.reddit.com/r/DesiMeta/.rss'
+    'https://timesofindia.indiatimes.com/rssfeeds/54829575.cms',
+    'https://feeds.feedburner.com/ndtvnews-trending-news',
+    'https://www.indiatoday.in/rss/1206514',
+    'https://www.india.com/rssfeeds/entertainment.xml',
+    'https://news.google.com/rss/search?q=YouTubers+India&hl=en&gl=IN&ceid=IN:en'
   ],
   bollywood: [
-    'https://www.pinkvilla.com/rss.xml',
-    'https://www.bollywoodhungama.com/rss/entertainment-news.xml',
-    'https://www.filmfare.com/rss/news',
     'https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms',
-    'https://www.koimoi.com/feed/',
-    'https://www.spotboye.com/feed'
+    'https://feeds.feedburner.com/ndtvnews-trending-news',
+    'https://www.indiatoday.in/rss/1206514',
+    'https://www.india.com/rssfeeds/entertainment.xml',
+    'https://news.google.com/rss/search?q=Bollywood+scandal&hl=en&gl=IN&ceid=IN:en'
   ],
   cricket: [
-    'https://www.cricbuzz.com/rss/news',
-    'https://www.espncricinfo.com/rss/content/story/feeds/0.xml',
-    'https://www.sportskeeda.com/feed/cricket',
+    'https://timesofindia.indiatimes.com/rssfeeds/4719148.cms',
     'https://feeds.feedburner.com/ndtvsports-latest',
-    'https://www.insidesport.in/feed/'
+    'https://www.indiatoday.in/rss/1206570',
+    'https://news.google.com/rss/search?q=Cricket+India&hl=en&gl=IN&ceid=IN:en'
   ],
   national: [
     'https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms',
-    'https://aajtak.intoday.in/rssfeed/miscellaneous.xml',
-    'https://news.abplive.com/homepage/rss',
-    'https://thewire.in/politics/feed',
-    'https://feeds.feedburner.com/ndtv/Lsgd',
-    'https://theprint.in/feed/',
-    'https://www.opindia.com/feed/'
+    'https://feeds.feedburner.com/ndtvnews-india-news',
+    'https://www.indiatoday.in/rss/1206514',
+    'https://news.google.com/rss/search?q=India+politics&hl=en&gl=IN&ceid=IN:en'
   ],
   pakistan: [
     'https://www.dawn.com/feeds/home',
-    'https://www.thenews.com.pk/rss/1/1',
     'https://arynews.tv/en/feed/',
-    'https://www.geo.tv/rss/1/0',
-    'https://en.dailypakistan.com.pk/feed/'
+    'https://news.google.com/rss/search?q=Pakistan+politics&hl=en&gl=PK&ceid=PK:en'
   ]
-};
-
-const ENHANCED_SEARCH_KEYWORDS = {
-  youtubers: { spicy: [] },
-  bollywood: { spicy: [] },
-  cricket: { spicy: [] },
-  national: { spicy: [] },
-  pakistan: { spicy: [] }
 };
 
 const SPICY_KEYWORDS = ['controversy', 'drama', 'fight', 'viral', 'trending', 'breaking', 'scandal', 'exposed', 'beef', 'roast', 'diss', 'leaked', 'secret'];
@@ -285,27 +269,27 @@ function checkUserRateLimit(userId, command) {
 
 async function scrapeRealNews(query, category) {
   try {
-    console.log(`🌐 Fetching news for: ${query} (Category: ${category})`);
+    console.log(`⚡ FAST search: "${query}" in ${category}`);
     const articles = [];
     const now = new Date();
     const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     
     // Get RSS sources for category
     const rssSources = ENHANCED_RSS_SOURCES[category] || [];
-    console.log(`📡 Using ${rssSources.length} RSS sources for ${category}`);
+    console.log(`📡 Using ${rssSources.length} WORKING sources for ${category}`);
     
     for (let sourceIndex = 0; sourceIndex < rssSources.length; sourceIndex++) {
       const rssUrl = rssSources[sourceIndex];
       
       try {
-        console.log(`🔍 RSS Source ${sourceIndex + 1}/${rssSources.length}: ${rssUrl.split('/')[2]}`);
+        console.log(`🔍 Source ${sourceIndex + 1}/${rssSources.length}`);
         
         const response = await axios.get(rssUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'application/rss+xml, application/xml, text/xml'
           },
-          timeout: 20000
+          timeout: 8000 // Faster timeout
         });
 
         const $ = cheerio.load(response.data, { xmlMode: true });
@@ -315,7 +299,7 @@ async function scrapeRealNews(query, category) {
         const items = $('item').length > 0 ? $('item') : $('entry');
         
         items.each((i, elem) => {
-          if (i >= 25) return false; // Limit per source
+          if (i >= 15 || foundInThisSource >= 10) return false; // Strict limits for speed
           
           const $elem = $(elem);
           const title = $elem.find('title').text().trim();
@@ -324,12 +308,15 @@ async function scrapeRealNews(query, category) {
           const description = $elem.find('description').text().trim() || $elem.find('summary').text().trim();
 
           if (title && link && title.length > 10) {
-            // Check if title/description contains query
-            const content = `${title} ${description}`.toLowerCase();
-            const queryWords = query.toLowerCase().split(' ');
-            const hasMatch = queryWords.some(word => content.includes(word));
+            // EXACT keyword matching - STRICT
+            const titleLower = title.toLowerCase();
+            const descLower = description.toLowerCase();
+            const queryLower = query.toLowerCase();
             
-            if (hasMatch) {
+            // Check if title or description contains EXACT keyword
+            const hasExactMatch = titleLower.includes(queryLower) || descLower.includes(queryLower);
+            
+            if (hasExactMatch) {
               let articleDate = new Date();
               if (pubDate) {
                 const parsedDate = new Date(pubDate);
@@ -343,6 +330,12 @@ async function scrapeRealNews(query, category) {
               if (articleDate >= last24Hours && hoursAgo <= 24) {
                 let realUrl = link;
                 try {
+                  if (link.includes('url=')) {
+                    const urlMatch = link.match(/url=([^&]+)/);
+                    if (urlMatch) {
+                      realUrl = decodeURIComponent(urlMatch[1]);
+                    }
+                  }
                   if (!realUrl.startsWith('http')) {
                     realUrl = 'https://' + realUrl;
                   }
@@ -352,12 +345,20 @@ async function scrapeRealNews(query, category) {
                 
                 // Extract source name from RSS URL
                 let source = rssUrl.split('/')[2].replace('www.', '');
-                if (source.includes('reddit.com')) {
-                  source = $elem.find('title').text().includes('r/') ? 
-                    $elem.find('title').text().split('r/')[1]?.split(' ')[0] || 'Reddit' : 'Reddit';
-                }
+                if (source.includes('timesofindia')) source = 'Times of India';
+                else if (source.includes('ndtv')) source = 'NDTV';
+                else if (source.includes('indiatoday')) source = 'India Today';
+                else if (source.includes('india.com')) source = 'India.com';
+                else if (source.includes('news.google')) source = 'Google News';
+                else if (source.includes('dawn.com')) source = 'Dawn';
+                else if (source.includes('arynews')) source = 'ARY News';
                 
                 let cleanTitle = title.replace(/\s+/g, ' ').trim();
+                
+                // Remove source name from title if present
+                if (cleanTitle.includes(' - ') && cleanTitle.includes(source)) {
+                  cleanTitle = cleanTitle.split(' - ')[0].trim();
+                }
                 
                 const titleKey = cleanTitle.toLowerCase().replace(/[^\w\s]/g, '').substring(0, 30);
                 const isDuplicate = articles.some(existing => {
@@ -388,7 +389,8 @@ async function scrapeRealNews(query, category) {
                     totalScore: spiceScore + conspiracyScore + importanceScore,
                     hoursAgo: hoursAgo,
                     sourceType: source,
-                    rssSource: rssUrl
+                    rssSource: rssUrl,
+                    matchedKeyword: query
                   });
                   
                   foundInThisSource++;
@@ -398,14 +400,15 @@ async function scrapeRealNews(query, category) {
           }
         });
         
-        console.log(`✅ RSS Source completed: Found ${foundInThisSource} articles`);
+        console.log(`✅ Source completed: Found ${foundInThisSource} EXACT matches`);
         
+        // Reduced delay for speed
         if (sourceIndex < rssSources.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second only
         }
         
       } catch (error) {
-        console.error(`❌ RSS Source ${sourceIndex + 1} failed: ${error.message}`);
+        console.error(`❌ Source ${sourceIndex + 1} failed: ${error.message}`);
       }
     }
     
@@ -416,7 +419,7 @@ async function scrapeRealNews(query, category) {
       return new Date(b.timestamp) - new Date(a.timestamp);
     });
     
-    console.log(`🎯 Total articles found: ${articles.length}`);
+    console.log(`🎯 Total EXACT matches: ${articles.length}`);
     return articles;
     
   } catch (error) {
@@ -450,7 +453,7 @@ async function addMultipleKeywords(userId, category, keywordsString) {
 
 async function fetchEnhancedContent(category, userId = null) {
   try {
-    console.log(`🎯 Fetching content for ${category} - USER KEYWORDS ONLY`);
+    console.log(`⚡ FAST fetch for ${category} - USER KEYWORDS ONLY`);
     
     const allArticles = [];
     let userKeywords = [];
@@ -470,12 +473,15 @@ async function fetchEnhancedContent(category, userId = null) {
       return [];
     }
     
+    // USE ALL KEYWORDS - User ne add kiye hain to sabhi search karne padenge
+    console.log(`🎯 Using ALL ${userKeywords.length} keywords`);
+    
     for (let i = 0; i < userKeywords.length; i++) {
       const userKeyword = userKeywords[i];
       try {
-        console.log(`   🎯 USER KEYWORD ${i + 1}/${userKeywords.length}: "${userKeyword.keyword}"`);
+        console.log(`   🎯 KEYWORD ${i + 1}/${userKeywords.length}: "${userKeyword.keyword}"`);
         const articles = await scrapeRealNews(userKeyword.keyword, category);
-        console.log(`   ✅ Found ${articles.length} articles for: ${userKeyword.keyword}`);
+        console.log(`   ✅ Found ${articles.length} EXACT matches for: ${userKeyword.keyword}`);
         
         articles.forEach(article => {
           article.searchKeyword = userKeyword.keyword;
@@ -484,8 +490,9 @@ async function fetchEnhancedContent(category, userId = null) {
         
         allArticles.push(...articles);
         
+        // Shorter delay between keywords for SPEED
         if (i < userKeywords.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 800)); // Reduced to 0.8 seconds
         }
         
       } catch (error) {
@@ -493,6 +500,7 @@ async function fetchEnhancedContent(category, userId = null) {
       }
     }
     
+    // SMART deduplication
     const uniqueArticles = [];
     const seenTitles = new Set();
     const seenUrls = new Set();
@@ -501,31 +509,14 @@ async function fetchEnhancedContent(category, userId = null) {
       const titleKey = article.title.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim().substring(0, 25);
       const urlKey = article.link.toLowerCase().replace(/[^\w]/g, '').substring(0, 40);
       
-      let isDuplicate = false;
-      
-      if (seenTitles.has(titleKey) || seenUrls.has(urlKey)) {
-        isDuplicate = true;
-      }
-      
-      if (!isDuplicate) {
-        for (const existingTitle of seenTitles) {
-          if (titleKey.length > 15 && existingTitle.length > 15) {
-            const similarity = titleKey.includes(existingTitle.substring(0, 15)) || existingTitle.includes(titleKey.substring(0, 15));
-            if (similarity) {
-              isDuplicate = true;
-              break;
-            }
-          }
-        }
-      }
-      
-      if (!isDuplicate) {
+      if (!seenTitles.has(titleKey) && !seenUrls.has(urlKey)) {
         seenTitles.add(titleKey);
         seenUrls.add(urlKey);
         uniqueArticles.push(article);
       }
     }
     
+    // SMART sorting - Priority + Score + Recency
     uniqueArticles.sort((a, b) => {
       const priorityDiff = (b.keywordPriority || 1) - (a.keywordPriority || 1);
       if (priorityDiff !== 0) return priorityDiff;
@@ -536,8 +527,9 @@ async function fetchEnhancedContent(category, userId = null) {
       return new Date(b.timestamp) - new Date(a.timestamp);
     });
     
+    // EXACTLY 50 articles max
     const finalArticles = uniqueArticles.slice(0, 50);
-    console.log(`✅ FINAL: ${finalArticles.length} unique articles for ${category}`);
+    console.log(`✅ FINAL: ${finalArticles.length} EXACT matches for ${category}`);
     
     return finalArticles;
     
@@ -547,22 +539,34 @@ async function fetchEnhancedContent(category, userId = null) {
   }
 }
 
-function createFallbackContent(category) {
-  return [{
-    title: `Add keywords to get ${category} news`,
-    link: "https://www.google.com/search?q=how+to+add+keywords",
-    pubDate: getCurrentTimestamp(),
-    formattedDate: "Now",
-    source: "Bot Help",
-    category: category,
-    timestamp: getCurrentTimestamp(),
-    spiceScore: 0,
-    conspiracyScore: 0,
-    importanceScore: 10,
-    totalScore: 10,
-    searchKeyword: "help",
-    description: `Use /addkeyword ${category} <your_keyword> to start getting news`
-  }];
+async function removeMultipleKeywords(userId, category, keywordsString) {
+  const keywords = keywordsString.split(',').map(k => k.trim()).filter(k => k.length > 0);
+  const results = [];
+  
+  for (const keyword of keywords) {
+    try {
+      const removed = await new Promise((resolve, reject) => {
+        database.db.run(
+          'DELETE FROM user_keywords WHERE user_id = ? AND category = ? AND keyword = ?',
+          [userId, category, keyword],
+          function(err) {
+            if (err) reject(err);
+            else resolve(this.changes > 0);
+          }
+        );
+      });
+      
+      if (removed) {
+        results.push({ keyword, status: 'removed' });
+      } else {
+        results.push({ keyword, status: 'not_found' });
+      }
+    } catch (error) {
+      results.push({ keyword, status: 'error' });
+    }
+  }
+  
+  return results;
 }
 
 async function formatAndSendNewsMessage(chatId, articles, category, bot) {
@@ -1195,27 +1199,69 @@ if (bot) {
   
   // Command: /removekeyword
   bot.onText(/\/removekeyword (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const input = match[1].trim();
-    const parts = input.split(' ');
-    
-    if (parts.length < 2) {
-      await bot.sendMessage(chatId, `❌ *Usage:* /removekeyword <category> <keyword>
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  const input = match[1].trim();
+  const parts = input.split(' ');
+  
+  if (parts.length < 2) {
+    await bot.sendMessage(chatId, `❌ *Usage:* /removekeyword <category> <keywords>
 
-*Example:* /removekeyword youtubers CarryMinati`);
-      return;
-    }
-    
-    const category = parts[0].toLowerCase();
-    const keyword = parts.slice(1).join(' ');
-    
-    if (!ENHANCED_SEARCH_KEYWORDS[category]) {
-      await bot.sendMessage(chatId, `❌ Invalid category!`);
-      return;
-    }
-    
-    try {
+*Single Keyword:*
+• /removekeyword youtubers CarryMinati
+
+*Multiple Keywords (comma separated):*
+• /removekeyword youtubers CarryMinati, Elvish Yadav, Triggered Insaan
+
+*Categories:* youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
+    return;
+  }
+  
+  const category = parts[0].toLowerCase();
+  const keywordsPart = parts.slice(1).join(' ');
+  
+  if (!ENHANCED_SEARCH_KEYWORDS[category]) {
+    await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
+    return;
+  }
+  
+  try {
+    // Check if multiple keywords (contains comma)
+    if (keywordsPart.includes(',')) {
+      const results = await removeMultipleKeywords(userId, category, keywordsPart);
+      
+      const removed = results.filter(r => r.status === 'removed');
+      const notFound = results.filter(r => r.status === 'not_found');
+      const errors = results.filter(r => r.status === 'error');
+      
+      let message = `🗑️ *MULTIPLE KEYWORDS REMOVAL*\n\n`;
+      
+      if (removed.length > 0) {
+        message += `✅ *Removed (${removed.length}):*\n`;
+        removed.forEach(r => message += `• ${r.keyword}\n`);
+        message += '\n';
+      }
+      
+      if (notFound.length > 0) {
+        message += `⚠️ *Not Found (${notFound.length}):*\n`;
+        notFound.forEach(r => message += `• ${r.keyword}\n`);
+        message += '\n';
+      }
+      
+      if (errors.length > 0) {
+        message += `❌ *Errors (${errors.length}):*\n`;
+        errors.forEach(r => message += `• ${r.keyword}\n`);
+        message += '\n';
+      }
+      
+      message += `📂 *Category:* ${category}`;
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      
+    } else {
+      // Single keyword removal
+      const keyword = keywordsPart;
+      
       const removed = await new Promise((resolve, reject) => {
         database.db.run(
           'DELETE FROM user_keywords WHERE user_id = ? AND category = ? AND keyword = ?',
@@ -1236,17 +1282,17 @@ if (bot) {
 
 🗑️ *Removed:* "${keyword}"
 📂 *Category:* ${category}`, { parse_mode: 'Markdown' });
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Remove keyword error:', error);
-      await bot.sendMessage(chatId, `❌ Error removing keyword. Try again.`);
-      botStats.errors++;
     }
-  });
-
+    
+    botStats.totalRequests++;
+    botStats.successfulRequests++;
+    
+  } catch (error) {
+    console.error('Remove keyword error:', error);
+    await bot.sendMessage(chatId, `❌ Error removing keyword. Try again.`);
+    botStats.errors++;
+  }
+});
   // Command: /mystats
   bot.onText(/\/mystats/, async (msg) => {
     const chatId = msg.chat.id;
