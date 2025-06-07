@@ -391,8 +391,6 @@ async function scrapeRealNews(query, category) {
                   
                   // BULLETPROOF STRICT matching - EXACT PHRASES ONLY
                   let matchPriority = 0;
-                  
-                  let matchPriority = 0;
                   if (titleLower.includes(queryLower)) {
                     matchPriority = 100; // Title match
                   } else if (descLower.includes(queryLower)) {
