@@ -392,11 +392,6 @@ async function scrapeRealNews(query, category) {
                   // BULLETPROOF STRICT matching - EXACT PHRASES ONLY
                   let matchPriority = 0;
                   
-                  // Remove punctuation and extra spaces for clean matching
-                  const cleanTitle = titleLower.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
-                  const cleanDesc = descLower.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
-                  const cleanQuery = queryLower.replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
-                  
                   // Split into words
                   const titleWords = cleanTitle.split(' ').filter(w => w.length > 0);
                   const descWords = cleanDesc.split(' ').filter(w => w.length > 0);
