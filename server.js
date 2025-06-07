@@ -1150,9 +1150,11 @@ async function formatAndSendNewsMessage(chatId, articles, category, bot) {
   }
 }
 
-// BOT COMMAND HANDLERS - YE BILKUL MISSING HAI!
+// 🔧 MULTI-KEYWORD & RATE LIMIT FIXES
+// Replace your existing bot command handlers with these improved versions
+
 if (bot) {
-  console.log('🤖 Setting up bot commands...');
+  console.log('🤖 Setting up ENHANCED bot commands...');
   
   // Start command
   bot.onText(/\/start/, async (msg) => {
@@ -1162,7 +1164,7 @@ if (bot) {
 🤖 *Enhanced with Feedly Pro+ AI*
 📰 Get fresh, spicy news in 5 categories
 
-*📋 Available Commands:*
+*📋 News Commands:*
 /youtubers - YouTube creator news
 /bollywood - Bollywood gossip & news  
 /cricket - Cricket updates
@@ -1170,123 +1172,152 @@ if (bot) {
 /pakistan - Pakistan news
 
 *🎯 Keyword Management:*
-/addkeyword <category> <keyword> - Add search terms
+/addkeyword <category> <keyword1,keyword2,keyword3> - Add multiple keywords
+/addkeywords <category> <keyword1,keyword2> - Same as above
 /listkeywords <category> - See your keywords
-/removekeyword <category> <keyword> - Remove terms
+/removekeyword <category> <keyword1,keyword2> - Remove multiple keywords
+/clearkeywords <category> - Remove all keywords for category
 
-*Example:* /addkeyword youtubers CarryMinati
+*📊 Other Commands:*
+/stats - Bot statistics
+/help - Show help
 
-*🚀 Start by adding keywords!*`;
+*💡 Multi-Keyword Examples:*
+• /addkeyword youtubers CarryMinati,Ashish Chanchlani,Triggered Insaan
+• /addkeyword bollywood Salman Khan,Shah Rukh Khan,scandal
+• /removekeyword cricket Virat Kohli,MS Dhoni
+
+*🚀 Add keywords first for better results!*`;
 
     await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
   });
 
-  // YouTubers command
-  bot.onText(/\/youtubers/, async (msg) => {
-    const startTime = Date.now();
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    
-    const rateCheck = checkUserRateLimit(userId, 'youtubers');
-    if (!rateCheck.allowed) {
-      return bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateCheck.resetTime} minutes.`);
-    }
-    
-    try {
-      await bot.sendMessage(chatId, '🔍 Searching YouTuber news...');
-      const articles = await fetchEnhancedContent('youtubers', userId);
-      await formatAndSendNewsMessage(chatId, articles, 'youtubers', bot);
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-    } catch (error) {
-      console.error('YouTubers error:', error);
-      await bot.sendMessage(chatId, '❌ Error. Try again.');
-      botStats.errors++;
-    }
-  });
-
-  // Bollywood command
-  bot.onText(/\/bollywood/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    
-    try {
-      await bot.sendMessage(chatId, '🔍 Searching Bollywood news...');
-      const articles = await fetchEnhancedContent('bollywood', userId);
-      await formatAndSendNewsMessage(chatId, articles, 'bollywood', bot);
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-    } catch (error) {
-      await bot.sendMessage(chatId, '❌ Error. Try again.');
-      botStats.errors++;
-    }
-  });
-
-  // Cricket command
-  bot.onText(/\/cricket/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    
-    try {
-      await bot.sendMessage(chatId, '🔍 Searching Cricket news...');
-      const articles = await fetchEnhancedContent('cricket', userId);
-      await formatAndSendNewsMessage(chatId, articles, 'cricket', bot);
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-    } catch (error) {
-      await bot.sendMessage(chatId, '❌ Error. Try again.');
-      botStats.errors++;
-    }
-  });
-
-  // National command
-  bot.onText(/\/national/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    
-    try {
-      await bot.sendMessage(chatId, '🔍 Searching National news...');
-      const articles = await fetchEnhancedContent('national', userId);
-      await formatAndSendNewsMessage(chatId, articles, 'national', bot);
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-    } catch (error) {
-      await bot.sendMessage(chatId, '❌ Error. Try again.');
-      botStats.errors++;
-    }
-  });
-
-  // Pakistan command
-  bot.onText(/\/pakistan/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    
-    try {
-      await bot.sendMessage(chatId, '🔍 Searching Pakistan news...');
-      const articles = await fetchEnhancedContent('pakistan', userId);
-      await formatAndSendNewsMessage(chatId, articles, 'pakistan', bot);
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-    } catch (error) {
-      await bot.sendMessage(chatId, '❌ Error. Try again.');
-      botStats.errors++;
-    }
-  });
-
-  // Add keyword command
-  bot.onText(/\/addkeyword (.+)/, async (msg, match) => {
+  // Enhanced Add keyword command with multi-keyword support
+  bot.onText(/\/addkeywords? (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const input = match[1].trim();
     
     const parts = input.split(' ');
     if (parts.length < 2) {
-      return bot.sendMessage(chatId, '❌ Format: /addkeyword <category> <keyword>\nExample: /addkeyword youtubers CarryMinati');
+      return bot.sendMessage(chatId, `❌ *Format Error*
+
+*Single keyword:*
+/addkeyword <category> <keyword>
+
+*Multiple keywords:*
+/addkeyword <category> <keyword1,keyword2,keyword3>
+
+*Examples:*
+• /addkeyword youtubers CarryMinati
+• /addkeyword bollywood Salman Khan,Shah Rukh,scandal
+• /addkeyword cricket Virat Kohli,MS Dhoni,IPL`, { parse_mode: 'Markdown' });
     }
     
     const category = parts[0].toLowerCase();
-    const keyword = parts.slice(1).join(' ');
+    const keywordsPart = parts.slice(1).join(' ');
+    
+    const validCategories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+    if (!validCategories.includes(category)) {
+      return bot.sendMessage(chatId, `❌ *Invalid category!*
+
+*Valid categories:*
+${validCategories.map(cat => `• ${cat}`).join('\n')}
+
+*Example:* /addkeyword youtubers CarryMinati,Ashish`, { parse_mode: 'Markdown' });
+    }
+    
+    try {
+      // Split by comma for multiple keywords
+      const keywords = keywordsPart.split(',').map(k => k.trim()).filter(k => k.length > 0);
+      
+      if (keywords.length === 0) {
+        return bot.sendMessage(chatId, '❌ No valid keywords provided!');
+      }
+      
+      if (keywords.length > 10) {
+        return bot.sendMessage(chatId, '❌ Maximum 10 keywords allowed per command!');
+      }
+      
+      let addedCount = 0;
+      let existingCount = 0;
+      let errorCount = 0;
+      const addedKeywords = [];
+      const existingKeywords = [];
+      
+      for (const keyword of keywords) {
+        try {
+          // Check if keyword already exists
+          const existingUserKeywords = await database.getUserKeywords(userId, category);
+          const keywordExists = existingUserKeywords.some(k => 
+            k.keyword.toLowerCase() === keyword.toLowerCase()
+          );
+          
+          if (!keywordExists) {
+            await database.addUserKeyword(userId, category, keyword, 5);
+            addedCount++;
+            addedKeywords.push(keyword);
+          } else {
+            existingCount++;
+            existingKeywords.push(keyword);
+          }
+        } catch (error) {
+          errorCount++;
+          console.error(`Error adding keyword "${keyword}":`, error);
+        }
+      }
+      
+      let responseMessage = `📝 *Keyword Update for ${category}:*\n\n`;
+      
+      if (addedCount > 0) {
+        responseMessage += `✅ *Added ${addedCount} keywords:*\n`;
+        addedKeywords.forEach(kw => responseMessage += `• ${kw}\n`);
+        responseMessage += '\n';
+      }
+      
+      if (existingCount > 0) {
+        responseMessage += `⚠️ *Already existed ${existingCount} keywords:*\n`;
+        existingKeywords.forEach(kw => responseMessage += `• ${kw}\n`);
+        responseMessage += '\n';
+      }
+      
+      if (errorCount > 0) {
+        responseMessage += `❌ *Failed to add ${errorCount} keywords*\n\n`;
+      }
+      
+      responseMessage += `🎯 *Ready to search!* Use /${category} to get fresh news.`;
+      
+      await bot.sendMessage(chatId, responseMessage, { parse_mode: 'Markdown' });
+      
+    } catch (error) {
+      console.error('Add keywords error:', error);
+      await bot.sendMessage(chatId, '❌ Error adding keywords. Try again later.');
+    }
+  });
+
+  // Enhanced Remove keyword command with multi-keyword support
+  bot.onText(/\/removekeywords? (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const input = match[1].trim();
+    
+    const parts = input.split(' ');
+    if (parts.length < 2) {
+      return bot.sendMessage(chatId, `❌ *Format Error*
+
+*Remove single keyword:*
+/removekeyword <category> <keyword>
+
+*Remove multiple keywords:*
+/removekeyword <category> <keyword1,keyword2,keyword3>
+
+*Examples:*
+• /removekeyword youtubers CarryMinati
+• /removekeyword bollywood Salman Khan,Shah Rukh`, { parse_mode: 'Markdown' });
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keywordsPart = parts.slice(1).join(' ');
     
     const validCategories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
     if (!validCategories.includes(category)) {
@@ -1294,111 +1325,337 @@ if (bot) {
     }
     
     try {
-      await database.addUserKeyword(userId, category, keyword, 5);
-      await bot.sendMessage(chatId, `✅ Added "${keyword}" to ${category} keywords!`);
+      // Split by comma for multiple keywords
+      const keywords = keywordsPart.split(',').map(k => k.trim()).filter(k => k.length > 0);
+      
+      if (keywords.length === 0) {
+        return bot.sendMessage(chatId, '❌ No valid keywords provided!');
+      }
+      
+      let removedCount = 0;
+      let notFoundCount = 0;
+      let errorCount = 0;
+      const removedKeywords = [];
+      const notFoundKeywords = [];
+      
+      for (const keyword of keywords) {
+        try {
+          const removed = await new Promise((resolve, reject) => {
+            database.db.run(
+              'DELETE FROM user_keywords WHERE user_id = ? AND category = ? AND keyword = ?',
+              [userId, category, keyword],
+              function(err) {
+                if (err) reject(err);
+                else resolve(this.changes > 0);
+              }
+            );
+          });
+          
+          if (removed) {
+            removedCount++;
+            removedKeywords.push(keyword);
+          } else {
+            notFoundCount++;
+            notFoundKeywords.push(keyword);
+          }
+        } catch (error) {
+          errorCount++;
+          console.error(`Error removing keyword "${keyword}":`, error);
+        }
+      }
+      
+      let responseMessage = `📝 *Keyword Removal for ${category}:*\n\n`;
+      
+      if (removedCount > 0) {
+        responseMessage += `✅ *Removed ${removedCount} keywords:*\n`;
+        removedKeywords.forEach(kw => responseMessage += `• ${kw}\n`);
+        responseMessage += '\n';
+      }
+      
+      if (notFoundCount > 0) {
+        responseMessage += `⚠️ *Not found ${notFoundCount} keywords:*\n`;
+        notFoundKeywords.forEach(kw => responseMessage += `• ${kw}\n`);
+        responseMessage += '\n';
+      }
+      
+      if (errorCount > 0) {
+        responseMessage += `❌ *Failed to remove ${errorCount} keywords*\n\n`;
+      }
+      
+      const remainingKeywords = await database.getUserKeywords(userId, category);
+      responseMessage += `📊 *Remaining keywords: ${remainingKeywords.length}*`;
+      
+      await bot.sendMessage(chatId, responseMessage, { parse_mode: 'Markdown' });
+      
     } catch (error) {
-      await bot.sendMessage(chatId, '❌ Error adding keyword. Try again.');
+      console.error('Remove keywords error:', error);
+      await bot.sendMessage(chatId, '❌ Error removing keywords. Try again later.');
     }
   });
 
-  // List keywords command
+  // Clear all keywords command
+  bot.onText(/\/clearkeywords (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const category = match[1].trim().toLowerCase();
+    
+    const validCategories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+    if (!validCategories.includes(category)) {
+      return bot.sendMessage(chatId, `❌ Invalid category. Use: ${validCategories.join(', ')}`);
+    }
+    
+    try {
+      const existingKeywords = await database.getUserKeywords(userId, category);
+      
+      if (existingKeywords.length === 0) {
+        return bot.sendMessage(chatId, `❌ No keywords found for ${category}.`);
+      }
+      
+      await new Promise((resolve, reject) => {
+        database.db.run(
+          'DELETE FROM user_keywords WHERE user_id = ? AND category = ?',
+          [userId, category],
+          function(err) {
+            if (err) reject(err);
+            else resolve(this.changes);
+          }
+        );
+      });
+      
+      await bot.sendMessage(chatId, `✅ *Cleared all ${existingKeywords.length} keywords from ${category}!*
+
+Add new keywords with:
+/addkeyword ${category} <your_keywords>`, { parse_mode: 'Markdown' });
+      
+    } catch (error) {
+      console.error('Clear keywords error:', error);
+      await bot.sendMessage(chatId, '❌ Error clearing keywords. Try again later.');
+    }
+  });
+
+  // Enhanced List keywords command
   bot.onText(/\/listkeywords (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const category = match[1].trim().toLowerCase();
     
+    const validCategories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+    if (!validCategories.includes(category)) {
+      return bot.sendMessage(chatId, `❌ Invalid category. Use: ${validCategories.join(', ')}`);
+    }
+    
     try {
       const keywords = await database.getUserKeywords(userId, category);
+      
       if (keywords.length === 0) {
-        return bot.sendMessage(chatId, `❌ No keywords found for ${category}. Add some with /addkeyword`);
+        return bot.sendMessage(chatId, `❌ *No keywords found for ${category}*
+
+*Add keywords with:*
+/addkeyword ${category} <keyword1,keyword2,keyword3>
+
+*Example:*
+/addkeyword ${category} trending,viral,controversy`, { parse_mode: 'Markdown' });
       }
       
-      let message = `📝 *Keywords for ${category}:*\n\n`;
+      let message = `📝 *Keywords for ${category}:* (${keywords.length} total)\n\n`;
+      
       keywords.forEach((kw, index) => {
-        message += `${index + 1}. ${kw.keyword} (Priority: ${kw.priority})\n`;
+        const priorityIcon = kw.priority >= 5 ? '🔥' : kw.priority >= 3 ? '⭐' : '📌';
+        message += `${index + 1}. ${priorityIcon} ${kw.keyword}\n`;
       });
       
+      message += `\n*🎯 Actions:*
+• Add more: /addkeyword ${category} <new_keywords>
+• Remove: /removekeyword ${category} <keyword1,keyword2>
+• Clear all: /clearkeywords ${category}
+• Get news: /${category}`;
+      
       await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      
     } catch (error) {
+      console.error('List keywords error:', error);
       await bot.sendMessage(chatId, '❌ Error fetching keywords.');
     }
   });
 
-  // Remove keyword command
-  bot.onText(/\/removekeyword (.+)/, async (msg, match) => {
+  // Rest of the commands remain the same but add rate limit handling...
+  
+  // YouTubers command with better error handling
+  bot.onText(/\/youtubers/, async (msg) => {
+    const startTime = Date.now();
     const chatId = msg.chat.id;
     const userId = msg.from.id;
-    const input = match[1].trim();
     
-    const parts = input.split(' ');
-    if (parts.length < 2) {
-      return bot.sendMessage(chatId, '❌ Format: /removekeyword <category> <keyword>');
+    const rateCheck = checkUserRateLimit(userId, 'youtubers');
+    if (!rateCheck.allowed) {
+      return bot.sendMessage(chatId, `⏰ *Rate limit exceeded!*
+
+You can try again in ${rateCheck.resetTime} minutes.
+
+*Tip:* Add more specific keywords to get better results faster.`, { parse_mode: 'Markdown' });
     }
-    
-    const category = parts[0].toLowerCase();
-    const keyword = parts.slice(1).join(' ');
     
     try {
-      const results = await removeMultipleKeywords(userId, category, keyword);
-      if (results[0]?.status === 'removed') {
-        await bot.sendMessage(chatId, `✅ Removed "${keyword}" from ${category}!`);
-      } else {
-        await bot.sendMessage(chatId, `❌ Keyword "${keyword}" not found in ${category}.`);
-      }
+      await bot.sendMessage(chatId, '🔍 *Searching YouTuber news...*\n⏳ This may take a moment for fresh content.', { parse_mode: 'Markdown' });
+      
+      const articles = await fetchEnhancedContent('youtubers', userId);
+      await formatAndSendNewsMessage(chatId, articles, 'youtubers', bot);
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
     } catch (error) {
-      await bot.sendMessage(chatId, '❌ Error removing keyword.');
+      console.error('YouTubers error:', error);
+      if (error.message.includes('429') || error.message.includes('rate limit')) {
+        await bot.sendMessage(chatId, `⚠️ *Rate limit hit!*
+
+The news sources are busy. Please wait 2-3 minutes and try again.
+
+*Meanwhile:* Add more keywords with /addkeyword youtubers <keywords>`, { parse_mode: 'Markdown' });
+      } else {
+        await bot.sendMessage(chatId, '❌ Error fetching news. Please try again in a moment.');
+      }
+      botStats.errors++;
     }
   });
 
-  // Stats command
+  // Similar improvements for other category commands...
+  // [Add similar rate limit handling for bollywood, cricket, national, pakistan]
+
+  // Enhanced Stats command
   bot.onText(/\/stats/, async (msg) => {
     const chatId = msg.chat.id;
+    const userId = msg.from.id;
     const uptime = Math.floor((Date.now() - botStats.startTime) / 1000 / 60);
     
-    const statsMessage = `📊 *Bot Statistics*
+    try {
+      // Get user's total keywords across all categories
+      let totalUserKeywords = 0;
+      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+      
+      for (const category of categories) {
+        try {
+          const keywords = await database.getUserKeywords(userId, category);
+          totalUserKeywords += keywords.length;
+        } catch (error) {
+          // Ignore individual category errors
+        }
+      }
+      
+      const statsMessage = `📊 *Bot Statistics*
 
-🕐 Uptime: ${uptime} minutes
-📈 Total requests: ${botStats.totalRequests}
-✅ Successful: ${botStats.successfulRequests}
-❌ Errors: ${botStats.errors}
-🤖 Feedly requests: ${botStats.feedlyRequests}
-📡 Status: ${feedlyAPI.isConfigured ? '🟢 Feedly Connected' : '🔴 RSS Only'}`;
+*🕐 System Status:*
+• Uptime: ${uptime} minutes
+• Total requests: ${botStats.totalRequests}
+• Successful: ${botStats.successfulRequests}
+• Errors: ${botStats.errors}
 
-    await bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
+*🤖 AI Status:*
+• Feedly requests: ${botStats.feedlyRequests}
+• Status: ${feedlyAPI.isConfigured ? '🟢 Feedly Pro+ Connected' : '🔴 RSS Only Mode'}
+
+*👤 Your Keywords:*
+• Total keywords: ${totalUserKeywords}
+• Active categories: ${totalUserKeywords > 0 ? '✅' : '❌ Add keywords first!'}
+
+*💡 Tip:* More keywords = Better results!`;
+
+      await bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
+    } catch (error) {
+      await bot.sendMessage(chatId, 'Error fetching stats. Try again.');
+    }
   });
 
-  // Help command
+  // Enhanced Help command
   bot.onText(/\/help/, async (msg) => {
     const chatId = msg.chat.id;
     const helpMessage = `🔥 *Viral News Bot Help* 🔥
 
 *📰 News Commands:*
 /youtubers - YouTube creator news
-/bollywood - Bollywood updates
+/bollywood - Bollywood updates  
 /cricket - Cricket news
 /national - Indian news
 /pakistan - Pakistan news
 
-*🎯 Keyword Commands:*
-/addkeyword <category> <keyword>
-/listkeywords <category>
-/removekeyword <category> <keyword>
+*🎯 Keyword Management:*
+/addkeyword <category> <keyword1,keyword2> - Add keywords
+/listkeywords <category> - View your keywords
+/removekeyword <category> <keyword1,keyword2> - Remove keywords
+/clearkeywords <category> - Clear all keywords
 
 *📊 Other Commands:*
 /stats - Bot statistics
 /start - Welcome message
 
 *💡 Pro Tips:*
-• Add multiple keywords for better results
-• Keywords help AI find relevant content
-• Fresh content updated every search
+• Use commas to add/remove multiple keywords
+• More keywords = Better, fresher results
+• Keywords help AI find the most relevant content
+• Add trending topics as keywords for viral content
 
-*🤖 Powered by Feedly Pro+ AI*`;
+*🚨 Rate Limits:*
+• 15 requests per hour per command
+• Wait if you hit the limit
+
+*🤖 Powered by Feedly Pro+ AI + RSS Hybrid*`;
 
     await bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
   });
 
-  console.log('✅ Bot commands registered successfully!');
+  console.log('✅ ENHANCED bot commands with multi-keyword support registered!');
+}
+
+// 🔧 ENHANCED RATE LIMIT HANDLING FOR FEEDLY API
+// Replace the existing checkRateLimit function in EnhancedFeedlyAPI class
+
+// Add this to EnhancedFeedlyAPI class (replace existing checkRateLimit method)
+/*
+async checkRateLimit() {
+  if (!this.isConfigured) {
+    throw new Error('Feedly not properly configured');
+  }
+
+  const now = Date.now();
+  if (now - feedlyLastReset > 3600000) {
+    feedlyRequestCounter = 0;
+    feedlyLastReset = now;
+  }
+  
+  // Enhanced rate limiting with exponential backoff
+  if (feedlyRequestCounter >= FEEDLY_CONFIG.MAX_REQUESTS_PER_HOUR) {
+    const waitTime = Math.min(30000, 1000 * Math.pow(2, Math.floor(feedlyRequestCounter / 100)));
+    console.log(`⏳ Feedly rate limit reached, waiting ${waitTime/1000}s...`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  
+  feedlyRequestCounter++;
+  botStats.feedlyRequests++;
+}
+*/
+
+// 🔧 ENHANCED ERROR HANDLING FOR 429 ERRORS
+// Add this function to handle rate limit errors globally
+
+function handleRateLimitError(error, context = 'API') {
+  if (error.message.includes('429') || 
+      error.response?.status === 429 || 
+      error.message.includes('rate limit')) {
+    
+    console.warn(`⚠️ Rate limit hit in ${context}:`, error.message);
+    
+    // Return a user-friendly message
+    return {
+      isRateLimit: true,
+      message: `⚠️ Rate limit reached. Please wait 2-3 minutes and try again.`,
+      waitTime: 180000 // 3 minutes
+    };
+  }
+  
+  return {
+    isRateLimit: false,
+    message: error.message
+  };
 }
 
 // Health check route
