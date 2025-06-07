@@ -392,43 +392,13 @@ async function scrapeRealNews(query, category) {
                   // BULLETPROOF STRICT matching - EXACT PHRASES ONLY
                   let matchPriority = 0;
                   
-                  // Split into words
-                  const titleWords = cleanTitle.split(' ').filter(w => w.length > 0);
-                  const descWords = cleanDesc.split(' ').filter(w => w.length > 0);
-                  const queryWords = cleanQuery.split(' ').filter(w => w.length > 0);
+                  let matchPriority = 0;
+                  if (titleLower.includes(queryLower)) {
+                    matchPriority = 100; // Title match
+                  } else if (descLower.includes(queryLower)) {
+                    matchPriority = 50;  // Description match
+                  }
                   
-                  // 1. EXACT FULL PHRASE match (HIGHEST PRIORITY)
-                  if (cleanTitle.includes(cleanQuery) || cleanDesc.includes(cleanQuery)) {
-                    // Double check - make sure it's a complete phrase, not part of another word
-                    const titleRegex = new RegExp(`\\b${cleanQuery.replace(/\s+/g, '\\s+')}\\b`, 'i');
-                    const descRegex = new RegExp(`\\b${cleanQuery.replace(/\s+/g, '\\s+')}\\b`, 'i');
-                    
-                    if (titleRegex.test(cleanTitle)) {
-                      matchPriority = 1000; // EXACT phrase in title
-                    } else if (descRegex.test(cleanDesc)) {
-                      matchPriority = 500;  // EXACT phrase in description
-                    }
-                  }
-                  // 2. IF SINGLE WORD - must match EXACTLY as whole word
-                  else if (queryWords.length === 1) {
-                    const singleWord = queryWords[0];
-                    if (titleWords.includes(singleWord)) {
-                      matchPriority = 100;
-                    } else if (descWords.includes(singleWord)) {
-                      matchPriority = 50;
-                    }
-                  }
-                  // 3. MULTI-WORD - ALL words must be present as separate complete words
-                  else if (queryWords.length > 1) {
-                    const allWordsInTitle = queryWords.every(qWord => titleWords.includes(qWord));
-                    const allWordsInDesc = queryWords.every(qWord => descWords.includes(qWord));
-                    
-                    if (allWordsInTitle) {
-                      matchPriority = 75;
-                    } else if (allWordsInDesc) {
-                      matchPriority = 25;
-                    }
-                  }
                   articles.push({
                     title: cleanTitle,
                     link: realUrl,
