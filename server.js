@@ -319,23 +319,19 @@ async function scrapeRealNews(query, category) {
             const descLower = description.toLowerCase();
             const queryLower = query.toLowerCase();
             
-            // STRICT keyword matching with word boundaries
+            // DEAD SIMPLE exact matching
             let hasMatch = false;
             
-            // Create regex for exact word match
-            const createWordRegex = (word) => new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+            // Split title and description into words
+            const titleWords = titleLower.split(/\s+/);
+            const descWords = descLower.split(/\s+/);
+            const searchWords = queryLower.split(/\s+/);
             
-            // 1. Full keyword exact match
-            if (titleLower.includes(queryLower) || descLower.includes(queryLower)) {
+            // Check if ALL search words exist as complete words
+            if (searchWords.every(searchWord => 
+              titleWords.includes(searchWord) || descWords.includes(searchWord)
+            )) {
               hasMatch = true;
-            }
-            // 2. Word boundary match (complete words only)
-            else {
-              const queryWords = queryLower.split(' ').filter(word => word.length > 2);
-              hasMatch = queryWords.some(word => {
-                const regex = createWordRegex(word);
-                return regex.test(title) || regex.test(description);
-              });
             }
 
             if (hasMatch) {
