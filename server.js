@@ -11,6 +11,10 @@ const FEEDLY_ACCESS_TOKEN = process.env.FEEDLY_ACCESS_TOKEN;
 // Initialize bot
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
+// Initialize Express app
+const app = express();
+const PORT = process.env.PORT || 3000;
+
 // Data storage
 const DATA_FILE = path.join(__dirname, 'bot_data.json');
 
@@ -158,6 +162,26 @@ function formatNewsArticles(articles, section) {
 
     return message;
 }
+
+// Express routes
+app.get('/', (req, res) => {
+    res.json({
+        status: 'Feedly Telegram Bot is running!',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        bot: 'Active'
+    });
+});
+
+app.get('/status', (req, res) => {
+    res.json({
+        bot: 'Feedly Telegram Bot',
+        status: 'Active',
+        polling: true,
+        timestamp: new Date().toISOString(),
+        sections: getSections()
+    });
+});
 
 // Command handlers
 bot.onText(/\/start/, async (msg) => {
@@ -493,38 +517,11 @@ bot.on('polling_error', (error) => {
     console.error('Polling error:', error);
 });
 
-// Start message
-console.log('🤖 Feedly Telegram Bot is starting...');
-console.log('📡 Polling for messages...');
-
-// Add express server for Render deployment
-const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Health check endpoint
-app.get('/', (req, res) => {
-    res.json({
-        status: 'Bot is running!',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime()
-    });
-});
-
-// Bot status endpoint
-app.get('/status', (req, res) => {
-    res.json({
-        bot: 'Feedly Telegram Bot',
-        status: 'Active',
-        polling: true,
-        timestamp: new Date().toISOString()
-    });
-});
-
-// Start express server
+// Start Express server
 app.listen(PORT, () => {
     console.log(`🌐 Web server running on port ${PORT}`);
-    console.log('🤖 Feedly Telegram Bot is ready!');
+    console.log('🤖 Feedly Telegram Bot is starting...');
+    console.log('📡 Polling for messages...');
 });
 
 // Keep the process alive
