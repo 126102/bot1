@@ -7,10 +7,12 @@ const winston = require('winston');
 const sqlite3 = require('sqlite3').verbose();
 const Filter = require('bad-words');
 
+// Environment Configuration
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const isProduction = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT || 3000;
 
+// App URL Configuration
 let APP_URL;
 if (process.env.RENDER_EXTERNAL_URL) {
   APP_URL = process.env.RENDER_EXTERNAL_URL;
@@ -22,6 +24,7 @@ if (process.env.RENDER_EXTERNAL_URL) {
   APP_URL = `http://localhost:${PORT}`;
 }
 
+// Initialize components
 const filter = new Filter();
 const logger = winston.createLogger({
   level: 'info',
@@ -29,6 +32,102 @@ const logger = winston.createLogger({
   transports: [new winston.transports.Console()]
 });
 
+// Enhanced Feedly Pro+ Configuration
+const FEEDLY_CONFIG = {
+  ACCESS_TOKEN: process.env.FEEDLY_ACCESS_TOKEN,
+  REFRESH_TOKEN: process.env.FEEDLY_REFRESH_TOKEN,
+  USER_ID: process.env.FEEDLY_USER_ID,
+  BASE_URL: 'https://cloud.feedly.com/v3',
+  SUBSCRIPTION_LEVEL: 'pro+',
+  MAX_REQUESTS_PER_HOUR: 1000,
+  CONCURRENT_REQUESTS: 10
+};
+
+// Global Variables
+let newsCache = [];
+let userRateLimits = new Map();
+let feedlyRequestCounter = 0;
+let feedlyLastReset = Date.now();
+
+// Bot Statistics
+let botStats = {
+  totalRequests: 0,
+  successfulRequests: 0,
+  errors: 0,
+  feedlyRequests: 0,
+  startTime: Date.now()
+};
+
+// Enhanced RSS Sources with Feedly Integration
+const ENHANCED_RSS_SOURCES = {
+  youtubers: {
+    rss: [
+      'https://timesofindia.indiatimes.com/rssfeeds/54829575.cms',
+      'https://feeds.feedburner.com/ndtvnews-trending-news',
+      'https://www.indiatoday.in/rss/1206514',
+      'https://news.google.com/rss/search?q=YouTubers+India&hl=en&gl=IN&ceid=IN:en'
+    ],
+    feedlyStreams: [
+      'user/YOUR_USER_ID/category/YouTube',
+      'feed/http://feeds.feedburner.com/TechCrunch',
+      'user/YOUR_USER_ID/tag/youtube'
+    ]
+  },
+  bollywood: {
+    rss: [
+      'https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms',
+      'https://feeds.feedburner.com/ndtvnews-trending-news',
+      'https://www.indiatoday.in/rss/1206514',
+      'https://news.google.com/rss/search?q=Bollywood+scandal&hl=en&gl=IN&ceid=IN:en'
+    ],
+    feedlyStreams: [
+      'user/YOUR_USER_ID/category/Bollywood',
+      'user/YOUR_USER_ID/tag/bollywood'
+    ]
+  },
+  cricket: {
+    rss: [
+      'https://timesofindia.indiatimes.com/rssfeeds/4719148.cms',
+      'https://feeds.feedburner.com/ndtvsports-latest',
+      'https://www.indiatoday.in/rss/1206570',
+      'https://news.google.com/rss/search?q=Cricket+India&hl=en&gl=IN&ceid=IN:en'
+    ],
+    feedlyStreams: [
+      'user/YOUR_USER_ID/category/Sports',
+      'user/YOUR_USER_ID/tag/cricket'
+    ]
+  },
+  national: {
+    rss: [
+      'https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms',
+      'https://feeds.feedburner.com/ndtvnews-india-news',
+      'https://www.indiatoday.in/rss/1206514',
+      'https://news.google.com/rss/search?q=India+politics&hl=en&gl=IN&ceid=IN:en'
+    ],
+    feedlyStreams: [
+      'user/YOUR_USER_ID/category/India',
+      'user/YOUR_USER_ID/tag/politics'
+    ]
+  },
+  pakistan: {
+    rss: [
+      'https://www.dawn.com/feeds/home',
+      'https://arynews.tv/en/feed/',
+      'https://news.google.com/rss/search?q=Pakistan+politics&hl=en&gl=PK&ceid=PK:en'
+    ],
+    feedlyStreams: [
+      'user/YOUR_USER_ID/category/Pakistan',
+      'user/YOUR_USER_ID/tag/pakistan'
+    ]
+  }
+};
+
+// Keywords for scoring
+const SPICY_KEYWORDS = ['controversy', 'drama', 'fight', 'viral', 'trending', 'breaking', 'scandal', 'exposed', 'beef', 'roast', 'diss', 'leaked', 'secret'];
+const CONSPIRACY_KEYWORDS = ['conspiracy', 'secret', 'hidden', 'exposed', 'leaked', 'revelation', 'behind scenes', 'truth', 'cover up'];
+const IMPORTANCE_KEYWORDS = ['breaking', 'urgent', 'alert', 'emergency', 'crisis', 'important'];
+
+// Initialize Database
 class NewsDatabase {
   constructor() {
     this.db = new sqlite3.Database('./enhanced_news_bot.db');
@@ -53,7 +152,16 @@ class NewsDatabase {
         category TEXT,
         response_time INTEGER,
         success INTEGER DEFAULT 1,
+        feedly_used INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS feedly_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        query_hash TEXT UNIQUE,
+        category TEXT,
+        content TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME
       )`
     ];
     
@@ -90,11 +198,38 @@ class NewsDatabase {
     });
   }
   
-  async logAnalytics(userId, command, category, responseTime, success = 1) {
+  async logAnalytics(userId, command, category, responseTime, success = 1, feedlyUsed = 0) {
     return new Promise((resolve, reject) => {
       this.db.run(
-        'INSERT INTO bot_analytics (user_id, command, category, response_time, success) VALUES (?, ?, ?, ?, ?)',
-        [userId, command, category, responseTime, success],
+        'INSERT INTO bot_analytics (user_id, command, category, response_time, success, feedly_used) VALUES (?, ?, ?, ?, ?, ?)',
+        [userId, command, category, responseTime, success, feedlyUsed],
+        function(err) {
+          if (err) reject(err);
+          else resolve(this.lastID);
+        }
+      );
+    });
+  }
+
+  async getCachedFeedlyResults(queryHash) {
+    return new Promise((resolve, reject) => {
+      this.db.get(
+        'SELECT content FROM feedly_cache WHERE query_hash = ? AND expires_at > datetime("now")',
+        [queryHash],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row ? JSON.parse(row.content) : null);
+        }
+      );
+    });
+  }
+
+  async cacheFeedlyResults(queryHash, category, content, expiryMinutes = 30) {
+    return new Promise((resolve, reject) => {
+      const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString();
+      this.db.run(
+        'INSERT OR REPLACE INTO feedly_cache (query_hash, category, content, expires_at) VALUES (?, ?, ?, ?)',
+        [queryHash, category, JSON.stringify(content), expiresAt],
         function(err) {
           if (err) reject(err);
           else resolve(this.lastID);
@@ -110,6 +245,7 @@ const bot = BOT_TOKEN ? new TelegramBot(BOT_TOKEN, {
   webHook: isProduction 
 }) : null;
 
+// Express app setup
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
@@ -120,59 +256,244 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-let newsCache = [];
-let userRateLimits = new Map();
-let botStats = {
-  totalRequests: 0,
-  successfulRequests: 0,
-  errors: 0,
-  startTime: Date.now()
-};
+// Enhanced Feedly Pro+ API Class
+class EnhancedFeedlyAPI {
+  constructor() {
+    this.headers = {
+      'Authorization': `Bearer ${FEEDLY_CONFIG.ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'ViralNewsBot/3.0'
+    };
+    this.rateLimitManager = new Map();
+  }
 
-const ENHANCED_RSS_SOURCES = {
-  youtubers: [
-    'https://timesofindia.indiatimes.com/rssfeeds/54829575.cms',
-    'https://feeds.feedburner.com/ndtvnews-trending-news',
-    'https://www.indiatoday.in/rss/1206514',
-    'https://news.google.com/rss/search?q=YouTubers+India&hl=en&gl=IN&ceid=IN:en'
-  ],
-  bollywood: [
-    'https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms',
-    'https://feeds.feedburner.com/ndtvnews-trending-news',
-    'https://www.indiatoday.in/rss/1206514',
-    'https://news.google.com/rss/search?q=Bollywood+scandal&hl=en&gl=IN&ceid=IN:en'
-  ],
-  cricket: [
-    'https://timesofindia.indiatimes.com/rssfeeds/4719148.cms',
-    'https://feeds.feedburner.com/ndtvsports-latest',
-    'https://www.indiatoday.in/rss/1206570',
-    'https://news.google.com/rss/search?q=Cricket+India&hl=en&gl=IN&ceid=IN:en'
-  ],
-  national: [
-    'https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms',
-    'https://feeds.feedburner.com/ndtvnews-india-news',
-    'https://www.indiatoday.in/rss/1206514',
-    'https://news.google.com/rss/search?q=India+politics&hl=en&gl=IN&ceid=IN:en'
-  ],
-  pakistan: [
-    'https://www.dawn.com/feeds/home',
-    'https://arynews.tv/en/feed/',
-    'https://news.google.com/rss/search?q=Pakistan+politics&hl=en&gl=PK&ceid=PK:en'
-  ]
-};
+  async refreshToken() {
+    try {
+      console.log('🔄 Refreshing Feedly token...');
+      const response = await axios.post(`${FEEDLY_CONFIG.BASE_URL}/auth/token`, {
+        refresh_token: FEEDLY_CONFIG.REFRESH_TOKEN,
+        grant_type: 'refresh_token'
+      });
 
-const ENHANCED_SEARCH_KEYWORDS = {
-  youtubers: { spicy: [] },
-  bollywood: { spicy: [] },
-  cricket: { spicy: [] },
-  national: { spicy: [] },
-  pakistan: { spicy: [] }
-};
+      if (response.data.access_token) {
+        process.env.FEEDLY_ACCESS_TOKEN = response.data.access_token;
+        this.headers['Authorization'] = `Bearer ${response.data.access_token}`;
+        console.log('✅ Feedly token refreshed successfully');
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('❌ Feedly token refresh failed:', error.message);
+      return false;
+    }
+  }
 
-const SPICY_KEYWORDS = ['controversy', 'drama', 'fight', 'viral', 'trending', 'breaking', 'scandal', 'exposed', 'beef', 'roast', 'diss', 'leaked', 'secret'];
-const CONSPIRACY_KEYWORDS = ['conspiracy', 'secret', 'hidden', 'exposed', 'leaked', 'revelation', 'behind scenes', 'truth', 'cover up'];
-const IMPORTANCE_KEYWORDS = ['breaking', 'urgent', 'alert', 'emergency', 'crisis', 'important'];
+  checkRateLimit() {
+    const now = Date.now();
+    if (now - feedlyLastReset > 3600000) { // Reset every hour
+      feedlyRequestCounter = 0;
+      feedlyLastReset = now;
+    }
+    
+    if (feedlyRequestCounter >= FEEDLY_CONFIG.MAX_REQUESTS_PER_HOUR) {
+      const resetTime = Math.ceil((feedlyLastReset + 3600000 - now) / 60000);
+      throw new Error(`Feedly rate limit exceeded. Reset in ${resetTime} minutes.`);
+    }
+    
+    feedlyRequestCounter++;
+    botStats.feedlyRequests++;
+  }
 
+  async searchContent(query, category, count = 50) {
+    try {
+      this.checkRateLimit();
+      
+      const queryHash = this.generateQueryHash(query, category);
+      const cachedResults = await database.getCachedFeedlyResults(queryHash);
+      
+      if (cachedResults) {
+        console.log(`🎯 Feedly cache hit for: "${query}"`);
+        return cachedResults;
+      }
+
+      console.log(`🤖 Feedly Pro+ searching: "${query}" in ${category}`);
+      
+      const searchParams = {
+        query: query,
+        count: count,
+        newerThan: Date.now() - 86400000, // Last 24 hours
+        locale: 'en',
+        engagement: 'high', // Pro+ feature
+        similarity: 'high', // Pro+ feature
+        duplicates: 'false' // Pro+ feature
+      };
+
+      const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/search/contents`, {
+        headers: this.headers,
+        params: searchParams,
+        timeout: 15000
+      });
+      
+      const formattedResults = this.formatResults(response.data.results || [], query, category);
+      
+      // Cache results for 30 minutes
+      await database.cacheFeedlyResults(queryHash, category, formattedResults, 30);
+      
+      console.log(`✅ Feedly found ${formattedResults.length} articles for: "${query}"`);
+      return formattedResults;
+      
+    } catch (error) {
+      if (error.response?.status === 401) {
+        console.log('🔑 Token expired, attempting refresh...');
+        const refreshed = await this.refreshToken();
+        if (refreshed) {
+          return this.searchContent(query, category, count);
+        }
+      }
+      
+      console.error(`❌ Feedly search error: ${error.message}`);
+      return [];
+    }
+  }
+
+  async getStreamContents(streamId, count = 30) {
+    try {
+      this.checkRateLimit();
+      
+      console.log(`📡 Feedly stream: ${streamId}`);
+      
+      const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/streams/contents`, {
+        headers: this.headers,
+        params: {
+          streamId: streamId,
+          count: count,
+          newerThan: Date.now() - 86400000,
+          ranked: 'newest' // Pro+ feature
+        },
+        timeout: 15000
+      });
+      
+      return response.data.items || [];
+      
+    } catch (error) {
+      console.error(`❌ Feedly stream error: ${error.message}`);
+      return [];
+    }
+  }
+
+  async getTrendingTopics(category) {
+    try {
+      this.checkRateLimit();
+      
+      console.log(`📈 Getting trending topics for: ${category}`);
+      
+      const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/topics/trending`, {
+        headers: this.headers,
+        params: {
+          category: category,
+          locale: 'en',
+          count: 20
+        },
+        timeout: 10000
+      });
+      
+      return response.data.topics || [];
+      
+    } catch (error) {
+      console.error(`❌ Feedly trending error: ${error.message}`);
+      return [];
+    }
+  }
+
+  generateQueryHash(query, category) {
+    return require('crypto').createHash('md5').update(`${query}_${category}_${Math.floor(Date.now() / 1800000)}`).digest('hex');
+  }
+
+  formatResults(results, query, category) {
+    if (!results || results.length === 0) return [];
+    
+    return results.map(item => {
+      const publishTime = item.published || item.crawled || Date.now();
+      const pubDate = new Date(publishTime);
+      
+      return {
+        title: this.cleanTitle(item.title || 'No Title'),
+        link: item.canonicalUrl || item.alternate?.[0]?.href || item.originId || '#',
+        pubDate: pubDate.toISOString(),
+        formattedDate: formatNewsDate(pubDate),
+        description: this.cleanDescription(item.summary?.content || item.content?.content || ''),
+        source: item.origin?.title || 'Feedly Source',
+        category: category,
+        timestamp: pubDate.toISOString(),
+        platform: 'feedly_pro',
+        reliability: this.calculateReliability(item),
+        isVerified: true,
+        spiceScore: calculateSpiceScore(item.title, item.summary?.content || ''),
+        conspiracyScore: calculateConspiracyScore(item.title, item.summary?.content || ''),
+        importanceScore: calculateImportanceScore(item.title, item.summary?.content || ''),
+        hoursAgo: Math.floor((Date.now() - publishTime) / (1000 * 60 * 60)),
+        sourceType: 'Feedly Pro+',
+        matchedKeyword: query,
+        feedlyEngagement: item.engagement || 0,
+        feedlyScore: item.engagementRate || 0,
+        matchPriority: this.calculateMatchPriority(item.title, item.summary?.content || '', query),
+        totalScore: 0 // Will be calculated after
+      };
+    }).map(article => {
+      article.totalScore = article.spiceScore + article.conspiracyScore + article.importanceScore;
+      return article;
+    });
+  }
+
+  cleanTitle(title) {
+    return title.replace(/\*/g, '').replace(/\[/g, '(').replace(/\]/g, ')').replace(/`/g, "'").replace(/_/g, '-').substring(0, 80).trim();
+  }
+
+  cleanDescription(description) {
+    const cleanDesc = description.replace(/<[^>]*>/g, '').substring(0, 150);
+    return cleanDesc.length < description.length ? cleanDesc + '...' : cleanDesc;
+  }
+
+  calculateReliability(item) {
+    let score = 8; // Base Feedly score
+    
+    if (item.origin?.title) {
+      const source = item.origin.title.toLowerCase();
+      if (source.includes('times') || source.includes('bbc') || source.includes('reuters')) score += 2;
+      if (source.includes('blog') || source.includes('personal')) score -= 1;
+    }
+    
+    if (item.engagement > 100) score += 1;
+    if (item.engagementRate > 0.1) score += 1;
+    
+    return Math.min(score, 10);
+  }
+
+  calculateMatchPriority(title, description, query) {
+    const titleLower = (title || '').toLowerCase();
+    const descLower = (description || '').toLowerCase();
+    const queryLower = query.toLowerCase();
+    
+    if (titleLower.includes(queryLower)) return 100;
+    if (descLower.includes(queryLower)) return 75;
+    
+    const queryWords = queryLower.split(/\s+/);
+    const titleWords = titleLower.split(/\s+/);
+    const descWords = descLower.split(/\s+/);
+    
+    const titleMatches = queryWords.filter(word => titleWords.includes(word)).length;
+    const descMatches = queryWords.filter(word => descWords.includes(word)).length;
+    
+    return Math.max(
+      (titleMatches / queryWords.length) * 50,
+      (descMatches / queryWords.length) * 25
+    );
+  }
+}
+
+const feedlyAPI = new EnhancedFeedlyAPI();
+
+// Utility Functions
 function getCurrentTimestamp() {
   return new Date().toISOString();
 }
@@ -273,39 +594,96 @@ function checkUserRateLimit(userId, command) {
   return { allowed: true };
 }
 
+// Enhanced keyword management functions
+async function addMultipleKeywords(userId, category, keywordsString) {
+  const keywords = keywordsString.split(',').map(k => k.trim()).filter(k => k.length > 0);
+  const results = [];
+  
+  for (const keyword of keywords) {
+    try {
+      const existingKeywords = await database.getUserKeywords(userId, category);
+      const keywordExists = existingKeywords.some(k => k.keyword.toLowerCase() === keyword.toLowerCase());
+      
+      if (!keywordExists) {
+        await database.addUserKeyword(userId, category, keyword, 5);
+        results.push({ keyword, status: 'added' });
+      } else {
+        results.push({ keyword, status: 'exists' });
+      }
+    } catch (error) {
+      results.push({ keyword, status: 'error' });
+    }
+  }
+  
+  return results;
+}
+
+async function removeMultipleKeywords(userId, category, keywordsString) {
+  const keywords = keywordsString.split(',').map(k => k.trim()).filter(k => k.length > 0);
+  const results = [];
+  
+  for (const keyword of keywords) {
+    try {
+      const removed = await new Promise((resolve, reject) => {
+        database.db.run(
+          'DELETE FROM user_keywords WHERE user_id = ? AND category = ? AND keyword = ?',
+          [userId, category, keyword],
+          function(err) {
+            if (err) reject(err);
+            else resolve(this.changes > 0);
+          }
+        );
+      });
+      
+      if (removed) {
+        results.push({ keyword, status: 'removed' });
+      } else {
+        results.push({ keyword, status: 'not_found' });
+      }
+    } catch (error) {
+      results.push({ keyword, status: 'error' });
+    }
+  }
+  
+  return results;
+}
+
+// Enhanced RSS scraping with Feedly integration
 async function scrapeRealNews(query, category) {
   try {
-    console.log(`⚡ FAST search: "${query}" in ${category}`);
+    console.log(`⚡ HYBRID search: "${query}" in ${category}`);
     const articles = [];
     const now = new Date();
     const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     
     // Get RSS sources for category
-    const rssSources = ENHANCED_RSS_SOURCES[category] || [];
-    console.log(`📡 Using ${rssSources.length} WORKING sources for ${category}`);
+    const sourceConfig = ENHANCED_RSS_SOURCES[category] || {};
+    const rssSources = sourceConfig.rss || [];
     
-    for (let sourceIndex = 0; sourceIndex < rssSources.length; sourceIndex++) {
+    console.log(`📡 Using ${rssSources.length} RSS sources + Feedly for ${category}`);
+    
+    // First, try RSS sources (faster)
+    for (let sourceIndex = 0; sourceIndex < Math.min(rssSources.length, 3); sourceIndex++) {
       const rssUrl = rssSources[sourceIndex];
       
       try {
-        console.log(`🔍 Source ${sourceIndex + 1}/${rssSources.length}`);
+        console.log(`🔍 RSS Source ${sourceIndex + 1}`);
         
         const response = await axios.get(rssUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'application/rss+xml, application/xml, text/xml'
           },
-          timeout: 8000 // Faster timeout
+          timeout: 8000
         });
 
         const $ = cheerio.load(response.data, { xmlMode: true });
         let foundInThisSource = 0;
         
-        // Handle both RSS and Atom formats
         const items = $('item').length > 0 ? $('item') : $('entry');
         
         items.each((i, elem) => {
-          if (i >= 15 || foundInThisSource >= 10) return false; // Strict limits for speed
+          if (i >= 10 || foundInThisSource >= 8) return false;
           
           const $elem = $(elem);
           const title = $elem.find('title').text().trim();
@@ -314,20 +692,15 @@ async function scrapeRealNews(query, category) {
           const description = $elem.find('description').text().trim() || $elem.find('summary').text().trim();
           
           if (title && link && title.length > 10) {
-            // EXACT keyword matching - STRICT
             const titleLower = title.toLowerCase();
             const descLower = description.toLowerCase();
             const queryLower = query.toLowerCase();
             
-            // DEAD SIMPLE exact matching
             let hasMatch = false;
-            
-            // Split title and description into words
             const titleWords = titleLower.split(/\s+/);
             const descWords = descLower.split(/\s+/);
             const searchWords = queryLower.split(/\s+/);
             
-            // Check if ALL search words exist as complete words
             if (searchWords.every(searchWord => 
               titleWords.includes(searchWord) || descWords.includes(searchWord)
             )) {
@@ -361,7 +734,6 @@ async function scrapeRealNews(query, category) {
                   realUrl = link;
                 }
                 
-                // Extract source name from RSS URL
                 let source = rssUrl.split('/')[2].replace('www.', '');
                 if (source.includes('timesofindia')) source = 'Times of India';
                 else if (source.includes('ndtv')) source = 'NDTV';
@@ -373,7 +745,6 @@ async function scrapeRealNews(query, category) {
                 
                 let cleanTitle = title.replace(/\s+/g, ' ').trim();
                 
-                // Remove source name from title if present
                 if (cleanTitle.includes(' - ') && cleanTitle.includes(source)) {
                   cleanTitle = cleanTitle.split(' - ')[0].trim();
                 }
@@ -389,12 +760,11 @@ async function scrapeRealNews(query, category) {
                   const conspiracyScore = calculateConspiracyScore(cleanTitle, description);
                   const importanceScore = calculateImportanceScore(cleanTitle, description);
                   
-                  // BULLETPROOF STRICT matching - EXACT PHRASES ONLY
                   let matchPriority = 0;
                   if (titleLower.includes(queryLower)) {
-                    matchPriority = 100; // Title match
+                    matchPriority = 100;
                   } else if (descLower.includes(queryLower)) {
-                    matchPriority = 50;  // Description match
+                    matchPriority = 50;
                   }
                   
                   articles.push({
@@ -417,7 +787,7 @@ async function scrapeRealNews(query, category) {
                     sourceType: source,
                     rssSource: rssUrl,
                     matchedKeyword: query,
-                    matchPriority: matchPriority  // NEW FIELD
+                    matchPriority: matchPriority
                   });
                   
                   foundInThisSource++;
@@ -427,67 +797,64 @@ async function scrapeRealNews(query, category) {
           }
         });
         
-        console.log(`✅ Source completed: Found ${foundInThisSource} EXACT matches`);
+        console.log(`✅ RSS Source completed: Found ${foundInThisSource} matches`);
         
-        // Reduced delay for speed
         if (sourceIndex < rssSources.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second only
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
         
       } catch (error) {
-        console.error(`❌ Source ${sourceIndex + 1} failed: ${error.message}`);
+        console.error(`❌ RSS Source ${sourceIndex + 1} failed: ${error.message}`);
       }
     }
     
-    // Sort by match priority FIRST, then score, then recency
+    // Then, enhance with Feedly Pro+ results
+    try {
+      console.log(`🤖 Enhancing with Feedly Pro+ for: "${query}"`);
+      const feedlyResults = await feedlyAPI.searchContent(query, category, 30);
+      
+      for (const feedlyArticle of feedlyResults) {
+        const isDuplicate = articles.some(existing => {
+          const existingKey = existing.title.toLowerCase().replace(/[^\w\s]/g, '').substring(0, 30);
+          const feedlyKey = feedlyArticle.title.toLowerCase().replace(/[^\w\s]/g, '').substring(0, 30);
+          return existingKey === feedlyKey || existing.link === feedlyArticle.link;
+        });
+        
+        if (!isDuplicate) {
+          articles.push(feedlyArticle);
+        }
+      }
+      
+      console.log(`✅ Feedly added ${feedlyResults.length} unique articles`);
+      
+    } catch (feedlyError) {
+      console.error(`⚠️ Feedly enhancement failed: ${feedlyError.message}`);
+    }
+    
+    // Sort by match priority, then score, then recency
     articles.sort((a, b) => {
-    // 1. Match priority is KING (huge difference)
-    const priorityDiff = (b.matchPriority || 0) - (a.matchPriority || 0);
-    if (priorityDiff !== 0) return priorityDiff;
+      const priorityDiff = (b.matchPriority || 0) - (a.matchPriority || 0);
+      if (priorityDiff !== 0) return priorityDiff;
+      
+      const scoreDiff = (b.totalScore || 0) - (a.totalScore || 0);
+      if (Math.abs(scoreDiff) > 1) return scoreDiff;
+      
+      return new Date(b.timestamp) - new Date(a.timestamp);
+    });
     
-    // 2. Score only matters within SAME priority level
-    const scoreDiff = (b.totalScore || 0) - (a.totalScore || 0);
-    if (Math.abs(scoreDiff) > 1) return scoreDiff;
-    
-    // 3. Recency as final tie-breaker
-    return new Date(b.timestamp) - new Date(a.timestamp);
-  });
-    
-    console.log(`🎯 Total EXACT matches: ${articles.length}`);
-    return articles;
+    console.log(`🎯 Total hybrid matches: ${articles.length}`);
+    return articles.slice(0, 50); // Limit to 50 best results
     
   } catch (error) {
-    console.error(`RSS scraping error: ${error.message}`);
+    console.error(`Hybrid scraping error: ${error.message}`);
     return [];
   }
 }
 
-async function addMultipleKeywords(userId, category, keywordsString) {
-  const keywords = keywordsString.split(',').map(k => k.trim()).filter(k => k.length > 0);
-  const results = [];
-  
-  for (const keyword of keywords) {
-    try {
-      const existingKeywords = await database.getUserKeywords(userId, category);
-      const keywordExists = existingKeywords.some(k => k.keyword.toLowerCase() === keyword.toLowerCase());
-      
-      if (!keywordExists) {
-        await database.addUserKeyword(userId, category, keyword, 5);
-        results.push({ keyword, status: 'added' });
-      } else {
-        results.push({ keyword, status: 'exists' });
-      }
-    } catch (error) {
-      results.push({ keyword, status: 'error' });
-    }
-  }
-  
-  return results;
-}
-
+// Enhanced content fetching with Feedly Pro+ integration
 async function fetchEnhancedContent(category, userId = null) {
   try {
-    console.log(`⚡ FAST fetch for ${category} - USER KEYWORDS ONLY`);
+    console.log(`⚡ ENHANCED fetch for ${category} with Feedly Pro+`);
     
     const allArticles = [];
     let userKeywords = [];
@@ -507,15 +874,38 @@ async function fetchEnhancedContent(category, userId = null) {
       return [];
     }
     
-    // USE ALL KEYWORDS - User ne add kiye hain to sabhi search karne padenge
-    console.log(`🎯 Using ALL ${userKeywords.length} keywords`);
+    // Use up to 5 keywords for better performance
+    const keywordsToUse = userKeywords.slice(0, 5);
+    console.log(`🎯 Using ${keywordsToUse.length} keywords`);
     
-    for (let i = 0; i < userKeywords.length; i++) {
-      const userKeyword = userKeywords[i];
+    // Process keywords with Feedly Pro+ and RSS hybrid approach
+    for (let i = 0; i < keywordsToUse.length; i++) {
+      const userKeyword = keywordsToUse[i];
       try {
-        console.log(`   🎯 KEYWORD ${i + 1}/${userKeywords.length}: "${userKeyword.keyword}"`);
+        console.log(`   🎯 KEYWORD ${i + 1}/${keywordsToUse.length}: "${userKeyword.keyword}"`);
+        
+        // Get articles from hybrid search (RSS + Feedly)
         const articles = await scrapeRealNews(userKeyword.keyword, category);
-        console.log(`   ✅ Found ${articles.length} EXACT matches for: ${userKeyword.keyword}`);
+        console.log(`   ✅ Found ${articles.length} matches for: ${userKeyword.keyword}`);
+        
+        // Also try Feedly streams if available
+        const sourceConfig = ENHANCED_RSS_SOURCES[category];
+        if (sourceConfig && sourceConfig.feedlyStreams) {
+          try {
+            for (const streamId of sourceConfig.feedlyStreams.slice(0, 2)) {
+              const streamContents = await feedlyAPI.getStreamContents(streamId, 20);
+              const relevantContents = streamContents.filter(item => {
+                const content = `${item.title || ''} ${item.summary?.content || ''}`.toLowerCase();
+                return content.includes(userKeyword.keyword.toLowerCase());
+              });
+              
+              const formattedStream = feedlyAPI.formatResults(relevantContents, userKeyword.keyword, category);
+              articles.push(...formattedStream);
+            }
+          } catch (streamError) {
+            console.warn(`Stream fetch failed: ${streamError.message}`);
+          }
+        }
         
         articles.forEach(article => {
           article.searchKeyword = userKeyword.keyword;
@@ -524,9 +914,8 @@ async function fetchEnhancedContent(category, userId = null) {
         
         allArticles.push(...articles);
         
-        // Shorter delay between keywords for SPEED
-        if (i < userKeywords.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 800)); // Reduced to 0.8 seconds
+        if (i < keywordsToUse.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1200));
         }
         
       } catch (error) {
@@ -534,7 +923,7 @@ async function fetchEnhancedContent(category, userId = null) {
       }
     }
     
-    // SMART deduplication
+    // Enhanced deduplication
     const uniqueArticles = [];
     const seenTitles = new Set();
     const seenUrls = new Set();
@@ -550,20 +939,34 @@ async function fetchEnhancedContent(category, userId = null) {
       }
     }
     
-    // SMART sorting - Priority + Score + Recency
+    // Enhanced sorting with Feedly engagement
     uniqueArticles.sort((a, b) => {
+      // 1. Keyword priority
       const priorityDiff = (b.keywordPriority || 1) - (a.keywordPriority || 1);
       if (priorityDiff !== 0) return priorityDiff;
       
+      // 2. Match priority
+      const matchDiff = (b.matchPriority || 0) - (a.matchPriority || 0);
+      if (matchDiff !== 0) return matchDiff;
+      
+      // 3. Platform preference (Feedly Pro+ gets bonus)
+      const platformDiff = (b.platform === 'feedly_pro' ? 1 : 0) - (a.platform === 'feedly_pro' ? 1 : 0);
+      if (platformDiff !== 0) return platformDiff;
+      
+      // 4. Total score
       const scoreDiff = (b.totalScore || 0) - (a.totalScore || 0);
       if (Math.abs(scoreDiff) > 2) return scoreDiff;
       
+      // 5. Feedly engagement (if available)
+      const engagementDiff = (b.feedlyEngagement || 0) - (a.feedlyEngagement || 0);
+      if (engagementDiff !== 0) return engagementDiff;
+      
+      // 6. Recency
       return new Date(b.timestamp) - new Date(a.timestamp);
     });
     
-    // EXACTLY 50 articles max
     const finalArticles = uniqueArticles.slice(0, 50);
-    console.log(`✅ FINAL: ${finalArticles.length} EXACT matches for ${category}`);
+    console.log(`✅ FINAL: ${finalArticles.length} enhanced matches for ${category}`);
     
     return finalArticles;
     
@@ -573,9 +976,10 @@ async function fetchEnhancedContent(category, userId = null) {
   }
 }
 
+// Fallback content function
 function createFallbackContent(category) {
   return [{
-    title: `Add keywords to get ${category} news`,
+    title: `Add keywords to get ${category} news with Feedly Pro+`,
     link: "https://www.google.com/search?q=how+to+add+keywords",
     pubDate: getCurrentTimestamp(),
     formattedDate: "Now",
@@ -587,40 +991,13 @@ function createFallbackContent(category) {
     importanceScore: 10,
     totalScore: 10,
     searchKeyword: "help",
-    description: `Use /addkeyword ${category} <your_keyword> to start getting news`
+    description: `Use /addkeyword ${category} <your_keyword> to start getting enhanced news`,
+    platform: 'help',
+    sourceType: 'Feedly Pro+ Enhanced Bot'
   }];
 }
 
-async function removeMultipleKeywords(userId, category, keywordsString) {
-  const keywords = keywordsString.split(',').map(k => k.trim()).filter(k => k.length > 0);
-  const results = [];
-  
-  for (const keyword of keywords) {
-    try {
-      const removed = await new Promise((resolve, reject) => {
-        database.db.run(
-          'DELETE FROM user_keywords WHERE user_id = ? AND category = ? AND keyword = ?',
-          [userId, category, keyword],
-          function(err) {
-            if (err) reject(err);
-            else resolve(this.changes > 0);
-          }
-        );
-      });
-      
-      if (removed) {
-        results.push({ keyword, status: 'removed' });
-      } else {
-        results.push({ keyword, status: 'not_found' });
-      }
-    } catch (error) {
-      results.push({ keyword, status: 'error' });
-    }
-  }
-  
-  return results;
-}
-
+// Enhanced message formatting function
 async function formatAndSendNewsMessage(chatId, articles, category, bot) {
   if (!articles || articles.length === 0) {
     await bot.sendMessage(chatId, `❌ No news found for ${category}!\n\n*Reason:* No keywords added yet.\n\n*Solution:* Add keywords first:\n/addkeyword ${category} <your_keyword>\n\n*Example:* /addkeyword ${category} trending topic`);
@@ -632,17 +1009,19 @@ async function formatAndSendNewsMessage(chatId, articles, category, bot) {
     const avgScore = articles.length > 0 ? Math.round(articles.reduce((sum, article) => sum + (article.totalScore || 0), 0) / articles.length) : 0;
     const spicyCount = articles.filter(a => (a.spiceScore || 0) > 6).length;
     const conspiracyCount = articles.filter(a => (a.conspiracyScore || 0) > 5).length;
+    const feedlyCount = articles.filter(a => a.platform === 'feedly_pro').length;
     
-    const summaryMessage = `🔥 *${category.toUpperCase()} USER KEYWORDS NEWS* 🔥
+    const summaryMessage = `🔥 *${category.toUpperCase()} FEEDLY PRO+ NEWS* 🔥
 
 📊 *Found: ${articles.length} articles (Last 24 hours)*
+🤖 *Feedly Pro+ Articles: ${feedlyCount}*
 🌶️ *Spicy Content: ${spicyCount} articles*
 🕵️ *Conspiracy Content: ${conspiracyCount} articles*
 ⭐ *Average Score: ${avgScore}/30*
-🌐 *Sources: Worldwide multi-source fetch*
+🌐 *Sources: RSS + Feedly Pro+ hybrid*
 🕐 *Updated: ${currentTime.toLocaleString('en-IN')}*
 
-*🎯 Only YOUR keywords searched - No default keywords!*
+*🎯 Only YOUR keywords + AI-enhanced discovery!*
 *Score Legend:* 🌶️ Spice | 🕵️ Conspiracy | ⚡ Importance`;
     
     await bot.sendMessage(chatId, summaryMessage, { parse_mode: 'Markdown' });
@@ -670,9 +1049,10 @@ async function formatAndSendNewsMessage(chatId, articles, category, bot) {
         const spiceIcon = (article.spiceScore || 0) > 7 ? '🔥' : (article.spiceScore || 0) > 4 ? '🌶️' : '📄';
         const conspiracyIcon = (article.conspiracyScore || 0) > 6 ? '🕵️‍♂️' : (article.conspiracyScore || 0) > 3 ? '🤔' : '';
         const importanceIcon = (article.importanceScore || 0) > 6 ? '⚡' : (article.importanceScore || 0) > 3 ? '📢' : '';
+        const platformIcon = article.platform === 'feedly_pro' ? '🤖' : '📡';
         
         const keywordInfo = article.searchKeyword ? ` [🔍 ${article.searchKeyword}]` : '';
-        const sourceInfo = article.sourceType ? ` [🌐 ${article.sourceType}]` : '';
+        const sourceInfo = article.sourceType ? ` [${platformIcon} ${article.sourceType}]` : '';
         
         chunkMessage += `${globalIndex}. 📰 ${spiceIcon}${conspiracyIcon}${importanceIcon} *${cleanTitle}*\n`;
         chunkMessage += `   📊 Score: ${article.totalScore || 0}/30 | ⏰ ${article.formattedDate || 'Recent'}${keywordInfo}\n`;
@@ -685,7 +1065,7 @@ async function formatAndSendNewsMessage(chatId, articles, category, bot) {
         const uniqueKeywords = [...new Set(articles.map(a => a.searchKeyword).filter(k => k))];
         chunkMessage += `✅ *Complete! Total: ${articles.length} articles*\n`;
         chunkMessage += `🏆 *Highest Score: ${topScore}/30*\n`;
-        chunkMessage += `🎯 *Keywords used: ${uniqueKeywords.length}* | 🌐 *Direct links only!*`;
+        chunkMessage += `🎯 *Keywords used: ${uniqueKeywords.length}* | 🤖 *Feedly Pro+ Enhanced!*`;
       } else {
         chunkMessage += `📄 *Part ${i + 1}/${totalChunks} • More content coming...*`;
       }
@@ -755,9 +1135,9 @@ if (bot) {
     const userId = msg.from.id;
     const startTime = Date.now();
     
-    const welcomeMessage = `🔥 *VIRAL NEWS BOT v3.0* 🔥
+    const welcomeMessage = `🔥 *FEEDLY PRO+ VIRAL NEWS BOT v4.0* 🔥
 
-*📰 Enhanced Commands:*
+*🤖 Enhanced with Feedly Pro+ AI:*
 /youtubers - YouTube drama & scandals 🎥
 /bollywood - Celebrity controversies 🎭
 /cricket - Sports scandals & fixes 🏏
@@ -765,17 +1145,19 @@ if (bot) {
 /pakistan - Pakistani political crisis 🇵🇰
 /latest - Top scored content from all categories 🔥
 
-*🔍 Smart Search Commands:*
-/search <term> - Multi-source news search
+*🔍 AI-Powered Search Commands:*
+/search <term> - Feedly Pro+ enhanced search
 /spicy <term> - High controversy content only (6+ spice)
+/trending - Get trending topics from Feedly
 
-*🛠️ Keyword Management:*
+*🛠️ Smart Keyword Management:*
 /addkeyword <category> <keyword> - Add custom keywords
 /listkeywords - View all your keywords  
 /removekeyword <category> <keyword> - Remove keywords
 
 *📊 Analytics & Info:*
-/mystats - Your usage statistics
+/mystats - Your enhanced usage statistics
+/feedlystats - Feedly Pro+ usage statistics
 /refresh - Force refresh all sources
 /help - This complete menu
 
@@ -783,15 +1165,16 @@ if (bot) {
 • /addkeyword youtubers CarryMinati controversy
 • /search Elvish Yadav drama
 • /spicy YouTube scandal
+• /trending
 
-🎬 *Get the SPICIEST content for your channel!*`;
+🤖 *Powered by Feedly Pro+ AI for the SPICIEST content!*`;
     
     try {
       await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
       
       const responseTime = Date.now() - startTime;
       try {
-        await database.logAnalytics(userId, 'start', 'general', responseTime);
+        await database.logAnalytics(userId, 'start', 'general', responseTime, 1, 0);
       } catch (dbError) {
         console.warn('Analytics failed:', dbError.message);
       }
@@ -805,207 +1188,62 @@ if (bot) {
     }
   });
 
-  // Command: /youtubers
-  bot.onText(/\/youtubers/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startTime = Date.now();
+  // Enhanced category commands with Feedly Pro+
+  const categoryCommands = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+  
+  categoryCommands.forEach(category => {
+    const regex = new RegExp(`\/${category}`);
     
-    const rateLimitCheck = checkUserRateLimit(userId, 'youtubers');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    try {
-      await bot.sendMessage(chatId, `🎥 *Getting YouTuber news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+    bot.onText(regex, async (msg) => {
+      const chatId = msg.chat.id;
+      const userId = msg.from.id;
+      const startTime = Date.now();
       
-      const news = await fetchEnhancedContent('youtubers', userId);
+      const rateLimitCheck = checkUserRateLimit(userId, category);
+      if (!rateLimitCheck.allowed) {
+        await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
+        return;
+      }
       
-      if (news.length > 0) {
-        newsCache = newsCache.filter(article => article.category !== 'youtubers');
-        newsCache.push(...news);
-        await formatAndSendNewsMessage(chatId, news, 'YouTuber', bot);
+      try {
+        const categoryIcon = {
+          youtubers: '🎥',
+          bollywood: '🎭',
+          cricket: '🏏',
+          national: '🇮🇳',
+          pakistan: '🇵🇰'
+        };
         
-        const responseTime = Date.now() - startTime;
-        try {
-          await database.logAnalytics(userId, 'youtubers', 'youtubers', responseTime);
-        } catch (dbError) {
-          console.warn('Analytics failed:', dbError.message);
+        await bot.sendMessage(chatId, `${categoryIcon[category]} *Getting ${category} news with Feedly Pro+...*\n\n🤖 AI-enhanced search\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+        
+        const news = await fetchEnhancedContent(category, userId);
+        
+        if (news.length > 0) {
+          newsCache = newsCache.filter(article => article.category !== category);
+          newsCache.push(...news);
+          await formatAndSendNewsMessage(chatId, news, category.charAt(0).toUpperCase() + category.slice(1), bot);
+          
+          const responseTime = Date.now() - startTime;
+          const feedlyUsed = news.some(a => a.platform === 'feedly_pro') ? 1 : 0;
+          try {
+            await database.logAnalytics(userId, category, category, responseTime, 1, feedlyUsed);
+          } catch (dbError) {
+            console.warn('Analytics failed:', dbError.message);
+          }
+        } else {
+          const fallbackContent = createFallbackContent(category);
+          await formatAndSendNewsMessage(chatId, fallbackContent, category.charAt(0).toUpperCase() + category.slice(1), bot);
         }
-      } else {
-        const fallbackContent = createFallbackContent('youtubers');
-        await formatAndSendNewsMessage(chatId, fallbackContent, 'YouTuber', bot);
+        
+        botStats.totalRequests++;
+        botStats.successfulRequests++;
+        
+      } catch (error) {
+        console.error(`${category} command error:`, error);
+        await bot.sendMessage(chatId, `❌ Error fetching ${category} news. Try /addkeyword ${category} <keyword>`);
+        botStats.errors++;
       }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('YouTuber command error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching YouTuber news. Try /addkeyword youtubers <creator_name>`);
-      botStats.errors++;
-    }
-  });
-
-  // Command: /bollywood
-  bot.onText(/\/bollywood/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startTime = Date.now();
-    
-    const rateLimitCheck = checkUserRateLimit(userId, 'bollywood');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    try {
-      await bot.sendMessage(chatId, `🎭 *Getting Bollywood news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-      
-      const news = await fetchEnhancedContent('bollywood', userId);
-      const bollywoodNews = news.length > 0 ? news : createFallbackContent('bollywood');
-      
-      newsCache = newsCache.filter(article => article.category !== 'bollywood');
-      newsCache.push(...bollywoodNews);
-      
-      await formatAndSendNewsMessage(chatId, bollywoodNews, 'Bollywood', bot);
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'bollywood', 'bollywood', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Bollywood command error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching Bollywood news. Try again.`);
-      botStats.errors++;
-    }
-  });
-
-  // Command: /cricket
-  bot.onText(/\/cricket/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startTime = Date.now();
-    
-    const rateLimitCheck = checkUserRateLimit(userId, 'cricket');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    try {
-      await bot.sendMessage(chatId, `🏏 *Getting Cricket news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-      
-      const news = await fetchEnhancedContent('cricket', userId);
-      const cricketNews = news.length > 0 ? news : createFallbackContent('cricket');
-      
-      newsCache = newsCache.filter(article => article.category !== 'cricket');
-      newsCache.push(...cricketNews);
-      
-      await formatAndSendNewsMessage(chatId, cricketNews, 'Cricket', bot);
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'cricket', 'cricket', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Cricket command error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching Cricket news. Try again.`);
-      botStats.errors++;
-    }
-  });
-
-  // Command: /national
-  bot.onText(/\/national/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startTime = Date.now();
-    
-    const rateLimitCheck = checkUserRateLimit(userId, 'national');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    try {
-      await bot.sendMessage(chatId, `🇮🇳 *Getting National news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-      
-      const news = await fetchEnhancedContent('national', userId);
-      const nationalNews = news.length > 0 ? news : createFallbackContent('national');
-      
-      newsCache = newsCache.filter(article => article.category !== 'national');
-      newsCache.push(...nationalNews);
-      
-      await formatAndSendNewsMessage(chatId, nationalNews, 'National', bot);
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'national', 'national', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('National command error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching National news. Try again.`);
-      botStats.errors++;
-    }
-  });
-
-  // Command: /pakistan
-  bot.onText(/\/pakistan/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const startTime = Date.now();
-    
-    const rateLimitCheck = checkUserRateLimit(userId, 'pakistan');
-    if (!rateLimitCheck.allowed) {
-      await bot.sendMessage(chatId, `⏰ Rate limit exceeded. Try again in ${rateLimitCheck.resetTime} minutes.`);
-      return;
-    }
-    
-    try {
-      await bot.sendMessage(chatId, `🇵🇰 *Getting Pakistan news...*\n\n🔍 Searching your keywords\n⏳ Please wait...`, { parse_mode: 'Markdown' });
-      
-      const news = await fetchEnhancedContent('pakistan', userId);
-      const pakistanNews = news.length > 0 ? news : createFallbackContent('pakistan');
-      
-      newsCache = newsCache.filter(article => article.category !== 'pakistan');
-      newsCache.push(...pakistanNews);
-      
-      await formatAndSendNewsMessage(chatId, pakistanNews, 'Pakistani', bot);
-      
-      const responseTime = Date.now() - startTime;
-      try {
-        await database.logAnalytics(userId, 'pakistan', 'pakistan', responseTime);
-      } catch (dbError) {
-        console.warn('Analytics failed:', dbError.message);
-      }
-      
-      botStats.totalRequests++;
-      botStats.successfulRequests++;
-      
-    } catch (error) {
-      console.error('Pakistan command error:', error);
-      await bot.sendMessage(chatId, `❌ Error fetching Pakistan news. Try again.`);
-      botStats.errors++;
-    }
+    });
   });
 
   // Command: /latest
@@ -1015,12 +1253,11 @@ if (bot) {
     const startTime = Date.now();
     
     try {
-      await bot.sendMessage(chatId, '🔄 *Getting top-scored content from all categories...*', { parse_mode: 'Markdown' });
+      await bot.sendMessage(chatId, '🔄 *Getting top-scored content from all categories with Feedly Pro+...*', { parse_mode: 'Markdown' });
       
-      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
       const allNews = [];
       
-      for (const category of categories) {
+      for (const category of categoryCommands) {
         try {
           const categoryNews = await fetchEnhancedContent(category, userId);
           allNews.push(...categoryNews);
@@ -1030,7 +1267,7 @@ if (bot) {
         }
       }
       
-      const topNews = allNews.sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0)).slice(0, 20);
+      const topNews = allNews.sort((a, b) => (b.totalScore || 0) - (a.totalScore || 0)).slice(0, 25);
       
       if (topNews.length > 0) {
         await formatAndSendNewsMessage(chatId, topNews, 'Latest Top', bot);
@@ -1039,8 +1276,9 @@ if (bot) {
       }
       
       const responseTime = Date.now() - startTime;
+      const feedlyUsed = topNews.some(a => a.platform === 'feedly_pro') ? 1 : 0;
       try {
-        await database.logAnalytics(userId, 'latest', 'all', responseTime);
+        await database.logAnalytics(userId, 'latest', 'all', responseTime, 1, feedlyUsed);
       } catch (dbError) {
         console.warn('Analytics failed:', dbError.message);
       }
@@ -1074,7 +1312,7 @@ if (bot) {
     }
 
     try {
-      await bot.sendMessage(chatId, `🔍 *SEARCH: "${searchTerm}"*\n\n🌐 Searching...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+      await bot.sendMessage(chatId, `🔍 *FEEDLY PRO+ SEARCH: "${searchTerm}"*\n\n🤖 AI-enhanced searching...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
 
       const searchResults = await scrapeRealNews(searchTerm, categorizeNews(searchTerm));
       
@@ -1086,8 +1324,9 @@ if (bot) {
       await formatAndSendNewsMessage(chatId, searchResults, `Search: ${searchTerm}`, bot);
       
       const responseTime = Date.now() - startTime;
+      const feedlyUsed = searchResults.some(a => a.platform === 'feedly_pro') ? 1 : 0;
       try {
-        await database.logAnalytics(userId, 'search', 'search', responseTime);
+        await database.logAnalytics(userId, 'search', 'search', responseTime, 1, feedlyUsed);
       } catch (dbError) {
         console.warn('Analytics failed:', dbError.message);
       }
@@ -1098,6 +1337,53 @@ if (bot) {
     } catch (error) {
       console.error(`Search error: ${error.message}`);
       await bot.sendMessage(chatId, `❌ Search failed. Try again.`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /trending (Feedly Pro+ exclusive)
+  bot.onText(/\/trending/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    try {
+      await bot.sendMessage(chatId, `📈 *Getting trending topics with Feedly Pro+...*`, { parse_mode: 'Markdown' });
+      
+      const trendingTopics = await feedlyAPI.getTrendingTopics('technology');
+      
+      if (trendingTopics.length === 0) {
+        await bot.sendMessage(chatId, `❌ No trending topics available right now.`);
+        return;
+      }
+      
+      let message = `📈 *TRENDING TOPICS (Feedly Pro+)*\n\n`;
+      
+      trendingTopics.slice(0, 15).forEach((topic, index) => {
+        message += `${index + 1}. 🔥 *${topic.label || topic.id}*\n`;
+        if (topic.description) {
+          message += `   📄 ${topic.description.substring(0, 80)}...\n`;
+        }
+        message += `   📊 Interest: ${topic.score || 'N/A'}\n\n`;
+      });
+      
+      message += `🤖 *Powered by Feedly Pro+ AI*`;
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'trending', 'trending', responseTime, 1, 1);
+      } catch (dbError) {
+        console.warn('Analytics failed:', dbError.message);
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Trending command error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching trending topics`);
       botStats.errors++;
     }
   });
@@ -1121,7 +1407,7 @@ if (bot) {
     }
 
     try {
-      await bot.sendMessage(chatId, `🌶️ *SPICY SEARCH: "${searchTerm}"*\n\n🔥 Finding controversy...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
+      await bot.sendMessage(chatId, `🌶️ *SPICY FEEDLY PRO+ SEARCH: "${searchTerm}"*\n\n🔥 Finding controversy with AI...\n⏳ Please wait...`, { parse_mode: 'Markdown' });
 
       const searchResults = await scrapeRealNews(searchTerm, categorizeNews(searchTerm));
       const spicyResults = searchResults.filter(article => (article.spiceScore || 0) >= 6);
@@ -1134,8 +1420,9 @@ if (bot) {
       await formatAndSendNewsMessage(chatId, spicyResults, `Spicy: ${searchTerm}`, bot);
       
       const responseTime = Date.now() - startTime;
+      const feedlyUsed = spicyResults.some(a => a.platform === 'feedly_pro') ? 1 : 0;
       try {
-        await database.logAnalytics(userId, 'spicy', 'search', responseTime);
+        await database.logAnalytics(userId, 'spicy', 'search', responseTime, 1, feedlyUsed);
       } catch (dbError) {
         console.warn('Analytics failed:', dbError.message);
       }
@@ -1152,13 +1439,13 @@ if (bot) {
 
   // Command: /addkeyword
   bot.onText(/\/addkeyword (.+)/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id;
-  const input = match[1].trim();
-  const parts = input.split(' ');
-  
-  if (parts.length < 2) {
-    await bot.sendMessage(chatId, `❌ *Usage:* /addkeyword <category> <keywords>
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const input = match[1].trim();
+    const parts = input.split(' ');
+    
+    if (parts.length < 2) {
+      await bot.sendMessage(chatId, `❌ *Usage:* /addkeyword <category> <keywords>
 
 *Categories:* youtubers, bollywood, cricket, national, pakistan
 
@@ -1170,141 +1457,138 @@ if (bot) {
 • /addkeyword bollywood Salman Khan, Shah Rukh Khan, Akshay Kumar
 
 *Pro Tip:* Use commas to separate multiple keywords!`, { parse_mode: 'Markdown' });
-    return;
-  }
-  
-  const category = parts[0].toLowerCase();
-  const keywordsPart = parts.slice(1).join(' ');
-  
-  if (!ENHANCED_SEARCH_KEYWORDS[category]) {
-    await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
-    return;
-  }
-  
-  try {
-    // Check if multiple keywords (contains comma)
-    if (keywordsPart.includes(',')) {
-      const results = await addMultipleKeywords(userId, category, keywordsPart);
-      
-      const added = results.filter(r => r.status === 'added');
-      const existing = results.filter(r => r.status === 'exists');
-      const errors = results.filter(r => r.status === 'error');
-      
-      let message = `📝 *MULTIPLE KEYWORDS PROCESSED*\n\n`;
-      
-      if (added.length > 0) {
-        message += `✅ *Added (${added.length}):*\n`;
-        added.forEach(r => message += `• ${r.keyword}\n`);
-        message += '\n';
-      }
-      
-      if (existing.length > 0) {
-        message += `⚠️ *Already Exist (${existing.length}):*\n`;
-        existing.forEach(r => message += `• ${r.keyword}\n`);
-        message += '\n';
-      }
-      
-      if (errors.length > 0) {
-        message += `❌ *Errors (${errors.length}):*\n`;
-        errors.forEach(r => message += `• ${r.keyword}\n`);
-        message += '\n';
-      }
-      
-      message += `📂 *Category:* ${category}\n`;
-      message += `🚀 Use /${category} to see results!`;
-      
-      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-      
-    } else {
-      // Single keyword (existing logic)
-      const keyword = keywordsPart;
-      const existingKeywords = await database.getUserKeywords(userId, category);
-      const keywordExists = existingKeywords.some(k => k.keyword.toLowerCase() === keyword.toLowerCase());
-      
-      if (keywordExists) {
-        await bot.sendMessage(chatId, `⚠️ Already exists! "${keyword}" is already in your ${category} keywords`);
-        return;
-      }
-      
-      await database.addUserKeyword(userId, category, keyword, 5);
-      
-      const totalKeywords = existingKeywords.length + 1;
-      
-      await bot.sendMessage(chatId, `✅ *Keyword Added Successfully!*
+      return;
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keywordsPart = parts.slice(1).join(' ');
+    
+    if (!categoryCommands.includes(category)) {
+      await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
+      return;
+    }
+    
+    try {
+      if (keywordsPart.includes(',')) {
+        const results = await addMultipleKeywords(userId, category, keywordsPart);
+        
+        const added = results.filter(r => r.status === 'added');
+        const existing = results.filter(r => r.status === 'exists');
+        const errors = results.filter(r => r.status === 'error');
+        
+        let message = `📝 *MULTIPLE KEYWORDS PROCESSED*\n\n`;
+        
+        if (added.length > 0) {
+          message += `✅ *Added (${added.length}):*\n`;
+          added.forEach(r => message += `• ${r.keyword}\n`);
+          message += '\n';
+        }
+        
+        if (existing.length > 0) {
+          message += `⚠️ *Already Exist (${existing.length}):*\n`;
+          existing.forEach(r => message += `• ${r.keyword}\n`);
+          message += '\n';
+        }
+        
+        if (errors.length > 0) {
+          message += `❌ *Errors (${errors.length}):*\n`;
+          errors.forEach(r => message += `• ${r.keyword}\n`);
+          message += '\n';
+        }
+        
+        message += `📂 *Category:* ${category}\n`;
+        message += `🚀 Use /${category} to see Feedly Pro+ results!`;
+        
+        await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+        
+      } else {
+        const keyword = keywordsPart;
+        const existingKeywords = await database.getUserKeywords(userId, category);
+        const keywordExists = existingKeywords.some(k => k.keyword.toLowerCase() === keyword.toLowerCase());
+        
+        if (keywordExists) {
+          await bot.sendMessage(chatId, `⚠️ Already exists! "${keyword}" is already in your ${category} keywords`);
+          return;
+        }
+        
+        await database.addUserKeyword(userId, category, keyword, 5);
+        
+        const totalKeywords = existingKeywords.length + 1;
+        
+        await bot.sendMessage(chatId, `✅ *Keyword Added Successfully!*
 
 📝 *Added:* "${keyword}"
 📂 *Category:* ${category}
 📊 *Your total keywords:* ${totalKeywords}
 
-🚀 Use /${category} to see results with your keyword!`, { parse_mode: 'Markdown' });
+🤖 Use /${category} to see Feedly Pro+ enhanced results!`, { parse_mode: 'Markdown' });
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Add keyword error:', error);
+      await bot.sendMessage(chatId, `❌ Error adding keyword. Try again.`);
+      botStats.errors++;
     }
-    
-    botStats.totalRequests++;
-    botStats.successfulRequests++;
-    
-  } catch (error) {
-    console.error('Add keyword error:', error);
-    await bot.sendMessage(chatId, `❌ Error adding keyword. Try again.`);
-    botStats.errors++;
-  }
-});
+  });
 
   // Command: /listkeywords
-bot.onText(/\/listkeywords/, async (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id;
-  
-  try {
-    let message = '📝 *YOUR CUSTOM KEYWORDS*\n\n';
-    let totalKeywords = 0;
+  bot.onText(/\/listkeywords/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
     
-    const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
-    
-    for (const category of categories) {
-      try {
-        const userKeywords = await database.getUserKeywords(userId, category);
-        const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
-        
-        message += `${icon} *${category.toUpperCase()}* (${userKeywords.length}):\n`;
-        
-        if (userKeywords.length > 0) {
-          userKeywords.forEach((k, index) => {
-            message += `${index + 1}. ${k.keyword}\n`;
-          });
-        } else {
-          message += `• No keywords yet\n`;
+    try {
+      let message = '📝 *YOUR FEEDLY PRO+ KEYWORDS*\n\n';
+      let totalKeywords = 0;
+      
+      for (const category of categoryCommands) {
+        try {
+          const userKeywords = await database.getUserKeywords(userId, category);
+          const icon = category === 'youtubers' ? '📱' : category === 'bollywood' ? '🎬' : category === 'cricket' ? '🏏' : category === 'pakistan' ? '🇵🇰' : '📰';
+          
+          message += `${icon} *${category.toUpperCase()}* (${userKeywords.length}):\n`;
+          
+          if (userKeywords.length > 0) {
+            userKeywords.forEach((k, index) => {
+              message += `${index + 1}. ${k.keyword}\n`;
+            });
+          } else {
+            message += `• No keywords yet\n`;
+          }
+          message += '\n';
+          totalKeywords += userKeywords.length;
+        } catch (categoryError) {
+          console.error(`Error fetching ${category} keywords:`, categoryError);
         }
-        message += '\n';
-        totalKeywords += userKeywords.length;
-      } catch (categoryError) {
-        console.error(`Error fetching ${category} keywords:`, categoryError);
       }
+      
+      message += `📊 *Total Keywords:* ${totalKeywords}\n\n`;
+      message += `💡 *Add more:* /addkeyword <category> <keyword>\n`;
+      message += `🗑️ *Remove:* /removekeyword <category> <keyword>\n`;
+      message += `🤖 *Enhanced by Feedly Pro+ AI*`;
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('List keywords error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching keywords. Try again.`);
+      botStats.errors++;
     }
-    
-    message += `📊 *Total Keywords:* ${totalKeywords}\n\n`;
-    message += `💡 *Add more:* /addkeyword <category> <keyword>\n`;
-    message += `🗑️ *Remove:* /removekeyword <category> <keyword>`;
-    
-    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    botStats.totalRequests++;
-    botStats.successfulRequests++;
-    
-  } catch (error) {
-    console.error('List keywords error:', error);
-    await bot.sendMessage(chatId, `❌ Error fetching keywords. Try again.`);
-    botStats.errors++;
-  }
-});
-  
+  });
+
   // Command: /removekeyword
   bot.onText(/\/removekeyword (.+)/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id;
-  const input = match[1].trim();
-  const parts = input.split(' ');
-  
-  if (parts.length < 2) {
-    await bot.sendMessage(chatId, `❌ *Usage:* /removekeyword <category> <keywords>
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const input = match[1].trim();
+    const parts = input.split(' ');
+    
+    if (parts.length < 2) {
+      await bot.sendMessage(chatId, `❌ *Usage:* /removekeyword <category> <keywords>
 
 *Single Keyword:*
 • /removekeyword youtubers CarryMinati
@@ -1313,85 +1597,84 @@ bot.onText(/\/listkeywords/, async (msg) => {
 • /removekeyword youtubers CarryMinati, Elvish Yadav, Triggered Insaan
 
 *Categories:* youtubers, bollywood, cricket, national, pakistan`, { parse_mode: 'Markdown' });
-    return;
-  }
-  
-  const category = parts[0].toLowerCase();
-  const keywordsPart = parts.slice(1).join(' ');
-  
-  if (!ENHANCED_SEARCH_KEYWORDS[category]) {
-    await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
-    return;
-  }
-  
-  try {
-    // Check if multiple keywords (contains comma)
-    if (keywordsPart.includes(',')) {
-      const results = await removeMultipleKeywords(userId, category, keywordsPart);
-      
-      const removed = results.filter(r => r.status === 'removed');
-      const notFound = results.filter(r => r.status === 'not_found');
-      const errors = results.filter(r => r.status === 'error');
-      
-      let message = `🗑️ *MULTIPLE KEYWORDS REMOVAL*\n\n`;
-      
-      if (removed.length > 0) {
-        message += `✅ *Removed (${removed.length}):*\n`;
-        removed.forEach(r => message += `• ${r.keyword}\n`);
-        message += '\n';
-      }
-      
-      if (notFound.length > 0) {
-        message += `⚠️ *Not Found (${notFound.length}):*\n`;
-        notFound.forEach(r => message += `• ${r.keyword}\n`);
-        message += '\n';
-      }
-      
-      if (errors.length > 0) {
-        message += `❌ *Errors (${errors.length}):*\n`;
-        errors.forEach(r => message += `• ${r.keyword}\n`);
-        message += '\n';
-      }
-      
-      message += `📂 *Category:* ${category}`;
-      
-      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-      
-    } else {
-      // Single keyword removal
-      const keyword = keywordsPart;
-      
-      const removed = await new Promise((resolve, reject) => {
-        database.db.run(
-          'DELETE FROM user_keywords WHERE user_id = ? AND category = ? AND keyword = ?',
-          [userId, category, keyword],
-          function(err) {
-            if (err) reject(err);
-            else resolve(this.changes > 0);
-          }
-        );
-      });
-      
-      if (!removed) {
-        await bot.sendMessage(chatId, `❌ Not found! "${keyword}" is not in your ${category} keywords`);
-        return;
-      }
-      
-      await bot.sendMessage(chatId, `✅ *Keyword Removed Successfully!*
+      return;
+    }
+    
+    const category = parts[0].toLowerCase();
+    const keywordsPart = parts.slice(1).join(' ');
+    
+    if (!categoryCommands.includes(category)) {
+      await bot.sendMessage(chatId, `❌ Invalid category!\n\n*Valid categories:* youtubers, bollywood, cricket, national, pakistan`);
+      return;
+    }
+    
+    try {
+      if (keywordsPart.includes(',')) {
+        const results = await removeMultipleKeywords(userId, category, keywordsPart);
+        
+        const removed = results.filter(r => r.status === 'removed');
+        const notFound = results.filter(r => r.status === 'not_found');
+        const errors = results.filter(r => r.status === 'error');
+        
+        let message = `🗑️ *MULTIPLE KEYWORDS REMOVAL*\n\n`;
+        
+        if (removed.length > 0) {
+          message += `✅ *Removed (${removed.length}):*\n`;
+          removed.forEach(r => message += `• ${r.keyword}\n`);
+          message += '\n';
+        }
+        
+        if (notFound.length > 0) {
+          message += `⚠️ *Not Found (${notFound.length}):*\n`;
+          notFound.forEach(r => message += `• ${r.keyword}\n`);
+          message += '\n';
+        }
+        
+        if (errors.length > 0) {
+          message += `❌ *Errors (${errors.length}):*\n`;
+          errors.forEach(r => message += `• ${r.keyword}\n`);
+          message += '\n';
+        }
+        
+        message += `📂 *Category:* ${category}`;
+        
+        await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+        
+      } else {
+        const keyword = keywordsPart;
+        
+        const removed = await new Promise((resolve, reject) => {
+          database.db.run(
+            'DELETE FROM user_keywords WHERE user_id = ? AND category = ? AND keyword = ?',
+            [userId, category, keyword],
+            function(err) {
+              if (err) reject(err);
+              else resolve(this.changes > 0);
+            }
+          );
+        });
+        
+        if (!removed) {
+          await bot.sendMessage(chatId, `❌ Not found! "${keyword}" is not in your ${category} keywords`);
+          return;
+        }
+        
+        await bot.sendMessage(chatId, `✅ *Keyword Removed Successfully!*
 
 🗑️ *Removed:* "${keyword}"
 📂 *Category:* ${category}`, { parse_mode: 'Markdown' });
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Remove keyword error:', error);
+      await bot.sendMessage(chatId, `❌ Error removing keyword. Try again.`);
+      botStats.errors++;
     }
-    
-    botStats.totalRequests++;
-    botStats.successfulRequests++;
-    
-  } catch (error) {
-    console.error('Remove keyword error:', error);
-    await bot.sendMessage(chatId, `❌ Error removing keyword. Try again.`);
-    botStats.errors++;
-  }
-});
+  });
+
   // Command: /mystats
   bot.onText(/\/mystats/, async (msg) => {
     const chatId = msg.chat.id;
@@ -1400,7 +1683,7 @@ bot.onText(/\/listkeywords/, async (msg) => {
     try {
       const userStats = await new Promise((resolve, reject) => {
         database.db.all(
-          `SELECT command, COUNT(*) as count, AVG(response_time) as avg_time
+          `SELECT command, COUNT(*) as count, AVG(response_time) as avg_time, SUM(feedly_used) as feedly_count
            FROM bot_analytics 
            WHERE user_id = ? 
            GROUP BY command 
@@ -1413,21 +1696,23 @@ bot.onText(/\/listkeywords/, async (msg) => {
         );
       });
       
-      let message = `📊 *YOUR USAGE STATISTICS*\n\n`;
+      let message = `📊 *YOUR FEEDLY PRO+ STATISTICS*\n\n`;
       
       if (userStats.length === 0) {
         message += `📈 *No usage data yet*\n\nStart using commands to see your stats!`;
       } else {
         const totalRequests = userStats.reduce((sum, stat) => sum + stat.count, 0);
+        const totalFeedlyUsage = userStats.reduce((sum, stat) => sum + (stat.feedly_count || 0), 0);
         const avgResponseTime = userStats.length > 0 ? Math.round(userStats.reduce((sum, stat) => sum + (stat.avg_time * stat.count), 0) / totalRequests) : 0;
         
         message += `🎯 *Total Requests:* ${totalRequests}\n`;
+        message += `🤖 *Feedly Pro+ Queries:* ${totalFeedlyUsage}\n`;
         message += `⚡ *Avg Response Time:* ${avgResponseTime}ms\n\n`;
         message += `📋 *Command Usage:*\n`;
         
         userStats.slice(0, 10).forEach(stat => {
           const icon = stat.command === 'youtubers' ? '📱' : stat.command === 'bollywood' ? '🎬' : stat.command === 'cricket' ? '🏏' : stat.command === 'pakistan' ? '🇵🇰' : '🔍';
-          message += `${icon} /${stat.command}: ${stat.count} times\n`;
+          message += `${icon} /${stat.command}: ${stat.count} times (Feedly: ${stat.feedly_count || 0})\n`;
         });
         
         const mostUsed = userStats[0];
@@ -1445,6 +1730,44 @@ bot.onText(/\/listkeywords/, async (msg) => {
     }
   });
 
+  // Command: /feedlystats
+  bot.onText(/\/feedlystats/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    try {
+      const uptime = Math.floor((Date.now() - botStats.startTime) / 1000 / 60); // minutes
+      const feedlyUsagePercent = botStats.totalRequests > 0 ? Math.round((botStats.feedlyRequests / botStats.totalRequests) * 100) : 0;
+      const remainingRequests = FEEDLY_CONFIG.MAX_REQUESTS_PER_HOUR - feedlyRequestCounter;
+      const resetTime = Math.ceil((feedlyLastReset + 3600000 - Date.now()) / 60000);
+      
+      const message = `🤖 *FEEDLY PRO+ STATISTICS*
+
+📊 *Current Session:*
+• Total Bot Requests: ${botStats.totalRequests}
+• Feedly API Calls: ${botStats.feedlyRequests}
+• Feedly Usage: ${feedlyUsagePercent}%
+• Success Rate: ${botStats.totalRequests > 0 ? Math.round((botStats.successfulRequests / botStats.totalRequests) * 100) : 0}%
+
+⚡ *Rate Limits:*
+• Remaining This Hour: ${remainingRequests}
+• Reset In: ${resetTime > 0 ? resetTime : 0} minutes
+• Max Per Hour: ${FEEDLY_CONFIG.MAX_REQUESTS_PER_HOUR}
+
+🚀 *Performance:*
+• Uptime: ${uptime} minutes
+• Cached Articles: ${newsCache.length}
+• Error Rate: ${botStats.totalRequests > 0 ? Math.round((botStats.errors / botStats.totalRequests) * 100) : 0}%
+
+🎯 *Subscription Level:* ${FEEDLY_CONFIG.SUBSCRIPTION_LEVEL.toUpperCase()}`;
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      
+    } catch (error) {
+      console.error('Feedly stats error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching Feedly statistics`);
+    }
+  });
+
   // Command: /refresh
   bot.onText(/\/refresh/, async (msg) => {
     const chatId = msg.chat.id;
@@ -1458,14 +1781,13 @@ bot.onText(/\/listkeywords/, async (msg) => {
     }
     
     try {
-      await bot.sendMessage(chatId, `🔄 *Refreshing sources...*\n\n⏳ Getting latest content`, { parse_mode: 'Markdown' });
+      await bot.sendMessage(chatId, `🔄 *Refreshing all sources with Feedly Pro+...*\n\n⏳ Getting latest content`, { parse_mode: 'Markdown' });
       
       newsCache = [];
       
-      const categories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
       const allNews = [];
       
-      for (const category of categories) {
+      for (const category of categoryCommands) {
         try {
           const categoryNews = await fetchEnhancedContent(category, userId);
           allNews.push(...categoryNews);
@@ -1477,14 +1799,17 @@ bot.onText(/\/listkeywords/, async (msg) => {
       
       newsCache = allNews;
       
+      const feedlyCount = allNews.filter(a => a.platform === 'feedly_pro').length;
+      
       await bot.sendMessage(chatId, `✅ *Refresh Complete!*
 
 📊 *Articles found:* ${newsCache.length}
+🤖 *Feedly Pro+ articles:* ${feedlyCount}
 🕐 *Completed:* ${getCurrentIndianTime().toLocaleString('en-IN')}`, { parse_mode: 'Markdown' });
       
       const responseTime = Date.now() - startTime;
       try {
-        await database.logAnalytics(userId, 'refresh', 'all', responseTime);
+        await database.logAnalytics(userId, 'refresh', 'all', responseTime, 1, feedlyCount > 0 ? 1 : 0);
       } catch (dbError) {
         console.warn('Analytics failed:', dbError.message);
       }
@@ -1503,9 +1828,9 @@ bot.onText(/\/listkeywords/, async (msg) => {
   bot.onText(/\/help/, async (msg) => {
     const chatId = msg.chat.id;
     
-    const helpMessage = `⚙️ *BOT HELP*
+    const helpMessage = `⚙️ *FEEDLY PRO+ BOT HELP*
 
-*🎯 News Commands:*
+*🤖 Enhanced News Commands:*
 /youtubers - YouTube news 🎥
 /bollywood - Bollywood news 🎭
 /cricket - Cricket news 🏏
@@ -1513,24 +1838,26 @@ bot.onText(/\/listkeywords/, async (msg) => {
 /pakistan - Pakistan news 🇵🇰
 /latest - Top content 🔥
 
-*🔍 Search Commands:*
-/search <term> - Search news
+*🔍 AI-Powered Search:*
+/search <term> - Feedly Pro+ search
 /spicy <term> - Spicy content only
+/trending - Trending topics
 
 *🛠️ Keywords:*
 /addkeyword <category> <keyword>
 /listkeywords
 /removekeyword <category> <keyword>
 
-*📊 Other:*
+*📊 Statistics:*
 /mystats - Your stats
+/feedlystats - Feedly Pro+ stats
 /refresh - Refresh sources
 /help - This menu
 
 *Example:*
 /addkeyword youtubers CarryMinati
 
-🔥 Only YOUR keywords are searched!`;
+🤖 Enhanced by Feedly Pro+ AI!`;
 
     await bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
   });
@@ -1540,11 +1867,12 @@ bot.onText(/\/listkeywords/, async (msg) => {
 app.get('/', (req, res) => {
   const uptime = Math.floor(process.uptime());
   res.json({ 
-    status: 'Enhanced Viral News Bot v3.0',
-    version: '3.0.0',
+    status: 'Enhanced Viral News Bot v4.0 with Feedly Pro+',
+    version: '4.0.0',
     uptime: uptime,
     totalRequests: botStats.totalRequests,
-    features: 'User keywords only, 50 articles max, 24h filter, direct links'
+    feedlyRequests: botStats.feedlyRequests,
+    features: 'Feedly Pro+ AI, User keywords, 50 articles max, 24h filter, direct links, trending topics'
   });
 });
 
@@ -1554,7 +1882,13 @@ app.get('/health', (req, res) => {
     newsCount: newsCache.length,
     uptime: process.uptime(),
     totalRequests: botStats.totalRequests,
-    errors: botStats.errors
+    feedlyRequests: botStats.feedlyRequests,
+    errors: botStats.errors,
+    feedlyRateLimit: {
+      used: feedlyRequestCounter,
+      max: FEEDLY_CONFIG.MAX_REQUESTS_PER_HOUR,
+      resetIn: Math.ceil((feedlyLastReset + 3600000 - Date.now()) / 60000)
+    }
   });
 });
 
@@ -1563,7 +1897,8 @@ app.get('/ping', (req, res) => {
   res.json({ 
     status: 'pong',
     timestamp: getCurrentIndianTime().toLocaleString('en-IN'),
-    version: '3.0.0'
+    version: '4.0.0',
+    feedly: 'enabled'
   });
 });
 
@@ -1576,6 +1911,11 @@ async function enhancedCleanup() {
     newsCache = newsCache.filter(article => {
       const articleDate = new Date(article.timestamp);
       return articleDate > expiryTime;
+    });
+    
+    // Clean old Feedly cache
+    database.db.run('DELETE FROM feedly_cache WHERE expires_at < datetime("now")', (err) => {
+      if (err) console.error('Cache cleanup error:', err);
     });
     
     console.log(`🧹 Cleanup: Removed ${initialCount - newsCache.length} old articles`);
@@ -1603,7 +1943,8 @@ setInterval(enhancedCleanup, 30 * 60 * 1000);   // Every 30 minutes
 
 // Startup delay
 setTimeout(() => {
-  console.log('🚀 Bot fully loaded!');
+  console.log('🚀 Feedly Pro+ Bot fully loaded!');
+  console.log(`🤖 Feedly Pro+ Status: ${FEEDLY_CONFIG.ACCESS_TOKEN ? 'Active' : 'Missing Token'}`);
 }, 3000);
 
 // Start the server
@@ -1611,6 +1952,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Bot running on port ${PORT}`);
   console.log(`🌐 URL: ${APP_URL}`);
   console.log(`📱 Bot: ${BOT_TOKEN ? 'Active' : 'Missing Token'}`);
+  console.log(`🤖 Feedly Pro+: ${FEEDLY_CONFIG.ACCESS_TOKEN ? 'Enabled' : 'Disabled'}`);
 });
 
 // Process error handlers
@@ -1646,6 +1988,7 @@ module.exports = {
   app, 
   bot, 
   database,
+  feedlyAPI,
   calculateSpiceScore,
   calculateConspiracyScore,
   calculateImportanceScore,
@@ -1654,5 +1997,7 @@ module.exports = {
   formatNewsDate,
   getCurrentIndianTime,
   getCurrentTimestamp,
-  ENHANCED_SEARCH_KEYWORDS
+  EnhancedFeedlyAPI,
+  ENHANCED_RSS_SOURCES,
+  FEEDLY_CONFIG
 };
