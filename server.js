@@ -2,6 +2,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
+const express = require('express');
 
 // Bot configuration
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -496,6 +497,36 @@ bot.on('polling_error', (error) => {
 console.log('🤖 Feedly Telegram Bot is starting...');
 console.log('📡 Polling for messages...');
 
+// Add express server for Render deployment
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Health check endpoint
+app.get('/', (req, res) => {
+    res.json({
+        status: 'Bot is running!',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
+// Bot status endpoint
+app.get('/status', (req, res) => {
+    res.json({
+        bot: 'Feedly Telegram Bot',
+        status: 'Active',
+        polling: true,
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Start express server
+app.listen(PORT, () => {
+    console.log(`🌐 Web server running on port ${PORT}`);
+    console.log('🤖 Feedly Telegram Bot is ready!');
+});
+
 // Keep the process alive
 process.on('SIGINT', () => {
     console.log('🛑 Bot stopped gracefully');
@@ -507,4 +538,4 @@ process.on('SIGTERM', () => {
     process.exit(0);
 });
 
-module.exports = bot;
+module.exports = { bot, app };
