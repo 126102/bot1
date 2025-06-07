@@ -1,4 +1,3 @@
-
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const cheerio = require('cheerio');
@@ -223,7 +222,7 @@ class EnhancedFeedlyAPI {
     }
   }
 
-  checkRateLimit() {
+  async checkRateLimit() {
     if (!this.isConfigured) {
       throw new Error('Feedly not properly configured');
     }
@@ -232,6 +231,13 @@ class EnhancedFeedlyAPI {
     if (now - feedlyLastReset > 3600000) {
       feedlyRequestCounter = 0;
       feedlyLastReset = now;
+    }
+    
+    // Enhanced rate limiting with exponential backoff
+    if (feedlyRequestCounter >= (FEEDLY_CONFIG.MAX_REQUESTS_PER_HOUR * 0.8)) {
+      const waitTime = Math.min(30000, 1000 * Math.pow(2, Math.floor(feedlyRequestCounter / 100)));
+      console.log(`⏳ Feedly rate limit approaching, waiting ${waitTime/1000}s...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
     }
     
     feedlyRequestCounter++;
@@ -247,7 +253,7 @@ class EnhancedFeedlyAPI {
 
       console.log(`🤖 Feedly Pro+ FRESH search: "${query}" in ${category}`);
       
-      this.checkRateLimit();
+      await this.checkRateLimit();
       
       const searchParams = {
         q: query,
@@ -295,7 +301,8 @@ class EnhancedFeedlyAPI {
       
       if (error.response?.status === 429) {
         console.error(`❌ Feedly rate limit hit: ${error.response?.data?.errorMessage || 'Rate limit exceeded'}`);
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        const backoffTime = Math.min(60000, 5000 * Math.pow(2, Math.floor(feedlyRequestCounter / 50)));
+        await new Promise(resolve => setTimeout(resolve, backoffTime));
         try {
           return this.searchContent(query, category, count);
         } catch (retryError) {
@@ -311,7 +318,7 @@ class EnhancedFeedlyAPI {
 
   async getFeedContent(feedId, query, count = 25) {
     try {
-      this.checkRateLimit();
+      await this.checkRateLimit();
       
       const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/streams/contents`, {
         headers: this.headers,
@@ -335,7 +342,8 @@ class EnhancedFeedlyAPI {
     } catch (error) {
       if (error.response?.status === 429) {
         console.error(`❌ Feed content rate limit: ${error.message}`);
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        const backoffTime = Math.min(30000, 3000 * Math.pow(2, Math.floor(feedlyRequestCounter / 30)));
+        await new Promise(resolve => setTimeout(resolve, backoffTime));
         try {
           return this.getFeedContent(feedId, query, count);
         } catch (retryError) {
@@ -493,7 +501,7 @@ class EnhancedFeedlyAPI {
         return [];
       }
 
-      this.checkRateLimit();
+      await this.checkRateLimit();
       
       console.log(`📈 Getting trending topics...`);
       
@@ -659,6 +667,70 @@ function checkUserRateLimit(userId, command) {
   return { allowed: true };
 }
 
+// Enhanced error handling function for rate limits
+function handleRateLimitError(error, category) {
+  if (error.message.includes('429') || 
+      error.response?.status === 429 || 
+      error.message.includes('rate limit')) {
+    
+    console.warn(`⚠️ Rate limit hit for ${category}:`, error.message);
+    
+    return `⚠️ *Rate limit hit!*
+
+The news sources are busy right now. Please wait 2-3 minutes and try again.
+
+*Meanwhile:* 
+• Add more keywords: /addkeyword ${category} <keywords>
+• Check your keywords: /listkeywords ${category}
+
+*Tip:* More specific keywords = Better results!`;
+  }
+  
+  // Handle other common errors
+  if (error.message.includes('timeout')) {
+    return `⏰ *Request timeout!*
+
+The news sources are slow right now. Please try again.`;
+  }
+  
+  if (error.message.includes('ECONNREFUSED') || error.message.includes('network')) {
+    return `🌐 *Network error!*
+
+There's a connection problem. Please check your internet and try again.`;
+  }
+  
+  // Default error message
+  return '❌ Error fetching news. Please try again in a moment.';
+}
+
+// Enhanced input validation function for keywords
+function validateKeywordInput(keyword) {
+  // Check if input is valid
+  if (!keyword || typeof keyword !== 'string') {
+    return null;
+  }
+  
+  // Remove potentially dangerous characters and normalize
+  const cleaned = keyword
+    .replace(/[<>\"'&{}]/g, '')    // Remove dangerous chars
+    .replace(/[^\w\s\-]/g, '')     // Keep only letters, numbers, spaces, hyphens
+    .replace(/\s+/g, ' ')          // Normalize multiple spaces
+    .trim();
+  
+  // Check length limits
+  if (cleaned.length === 0) return null;
+  if (cleaned.length < 2) return null;        // Too short
+  if (cleaned.length > 50) return cleaned.substring(0, 50); // Too long, truncate
+  
+  return cleaned;
+}
+
+// Function to validate category input
+function validateCategory(category) {
+  const validCategories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
+  return validCategories.includes(category.toLowerCase());
+}
+
 // Enhanced RSS scraping with FRESH Feedly integration
 async function scrapeRealNews(query, category) {
   try {
@@ -675,7 +747,7 @@ async function scrapeRealNews(query, category) {
       const rssUrl = rssSources[sourceIndex];
       
       try {
-      console.log(`🔍 RSS Source ${sourceIndex + 1}`);
+        console.log(`🔍 RSS Source ${sourceIndex + 1}`);
         
         const response = await axios.get(rssUrl, {
           headers: {
@@ -1053,7 +1125,7 @@ function createFallbackContent(category) {
 // Enhanced message formatting function
 async function formatAndSendNewsMessage(chatId, articles, category, bot) {
   if (!articles || articles.length === 0) {
-    await bot.sendMessage(chatId, `❌ No news found for ${category}!\n\n*Reason:* No keywords added yet.\n\n*Solution:* Add keywords first:\n/addkeyword ${category} <your_keyword>\n\n*Example:* /addkeyword ${category} trending topic`);
+    await bot.sendMessage(chatId, `❌ No news found for ${category}!\n\n*Reason:* No keywords added yet.\n\n*Solution:* Add keywords first:\n/addkeyword ${category} <your_keyword>\n\n*Example:* /addkeyword ${category} trending topic`, { parse_mode: 'Markdown' });
     return;
   }
 
@@ -1150,11 +1222,15 @@ async function formatAndSendNewsMessage(chatId, articles, category, bot) {
   }
 }
 
-// 🔧 MULTI-KEYWORD & RATE LIMIT FIXES
-// Replace your existing bot command handlers with these improved versions
+// ==========================================
+// PART 3: ENHANCED BOT COMMANDS - REPLACE ENTIRE BOT SECTION
+// ==========================================
+
+// Find and DELETE both existing "if (bot) {" sections in your code
+// Then PASTE this complete enhanced bot section:
 
 if (bot) {
-  console.log('🤖 Setting up ENHANCED bot commands...');
+  console.log('🤖 Setting up COMPLETE ENHANCED bot commands...');
   
   // Start command
   bot.onText(/\/start/, async (msg) => {
@@ -1173,7 +1249,6 @@ if (bot) {
 
 *🎯 Keyword Management:*
 /addkeyword <category> <keyword1,keyword2,keyword3> - Add multiple keywords
-/addkeywords <category> <keyword1,keyword2> - Same as above
 /listkeywords <category> - See your keywords
 /removekeyword <category> <keyword1,keyword2> - Remove multiple keywords
 /clearkeywords <category> - Remove all keywords for category
@@ -1192,7 +1267,7 @@ if (bot) {
     await bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
   });
 
-  // Enhanced Add keyword command with multi-keyword support
+  // Enhanced Add keyword command with multi-keyword support and validation
   bot.onText(/\/addkeywords? (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1217,26 +1292,43 @@ if (bot) {
     const category = parts[0].toLowerCase();
     const keywordsPart = parts.slice(1).join(' ');
     
-    const validCategories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
-    if (!validCategories.includes(category)) {
+    if (!validateCategory(category)) {
       return bot.sendMessage(chatId, `❌ *Invalid category!*
 
 *Valid categories:*
-${validCategories.map(cat => `• ${cat}`).join('\n')}
+• youtubers
+• bollywood  
+• cricket
+• national
+• pakistan
 
 *Example:* /addkeyword youtubers CarryMinati,Ashish`, { parse_mode: 'Markdown' });
     }
     
     try {
-      // Split by comma for multiple keywords
-      const keywords = keywordsPart.split(',').map(k => k.trim()).filter(k => k.length > 0);
+      // Split by comma and validate each keyword
+      const rawKeywords = keywordsPart.split(',').map(k => k.trim());
+      const validatedKeywords = [];
       
-      if (keywords.length === 0) {
-        return bot.sendMessage(chatId, '❌ No valid keywords provided!');
+      for (const rawKeyword of rawKeywords) {
+        const validatedKeyword = validateKeywordInput(rawKeyword);
+        if (validatedKeyword) {
+          validatedKeywords.push(validatedKeyword);
+        }
       }
       
-      if (keywords.length > 10) {
+      if (validatedKeywords.length === 0) {
+        return bot.sendMessage(chatId, '❌ No valid keywords provided! Keywords must be 2-50 characters and contain only letters, numbers, and spaces.');
+      }
+      
+      if (validatedKeywords.length > 10) {
         return bot.sendMessage(chatId, '❌ Maximum 10 keywords allowed per command!');
+      }
+      
+      // Check total keyword limit per user
+      const existingUserKeywords = await database.getUserKeywords(userId, category);
+      if (existingUserKeywords.length + validatedKeywords.length > 50) {
+        return bot.sendMessage(chatId, `❌ Maximum 50 keywords allowed per category! You have ${existingUserKeywords.length}, trying to add ${validatedKeywords.length}.`);
       }
       
       let addedCount = 0;
@@ -1245,10 +1337,9 @@ ${validCategories.map(cat => `• ${cat}`).join('\n')}
       const addedKeywords = [];
       const existingKeywords = [];
       
-      for (const keyword of keywords) {
+      for (const keyword of validatedKeywords) {
         try {
           // Check if keyword already exists
-          const existingUserKeywords = await database.getUserKeywords(userId, category);
           const keywordExists = existingUserKeywords.some(k => 
             k.keyword.toLowerCase() === keyword.toLowerCase()
           );
@@ -1295,7 +1386,7 @@ ${validCategories.map(cat => `• ${cat}`).join('\n')}
     }
   });
 
-  // Enhanced Remove keyword command with multi-keyword support
+  // Enhanced Remove keyword command with multi-keyword support and validation
   bot.onText(/\/removekeywords? (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1319,16 +1410,23 @@ ${validCategories.map(cat => `• ${cat}`).join('\n')}
     const category = parts[0].toLowerCase();
     const keywordsPart = parts.slice(1).join(' ');
     
-    const validCategories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
-    if (!validCategories.includes(category)) {
-      return bot.sendMessage(chatId, `❌ Invalid category. Use: ${validCategories.join(', ')}`);
+    if (!validateCategory(category)) {
+      return bot.sendMessage(chatId, `❌ Invalid category. Use: youtubers, bollywood, cricket, national, pakistan`);
     }
     
     try {
-      // Split by comma for multiple keywords
-      const keywords = keywordsPart.split(',').map(k => k.trim()).filter(k => k.length > 0);
+      // Split by comma and validate each keyword
+      const rawKeywords = keywordsPart.split(',').map(k => k.trim());
+      const validatedKeywords = [];
       
-      if (keywords.length === 0) {
+      for (const rawKeyword of rawKeywords) {
+        const validatedKeyword = validateKeywordInput(rawKeyword);
+        if (validatedKeyword) {
+          validatedKeywords.push(validatedKeyword);
+        }
+      }
+      
+      if (validatedKeywords.length === 0) {
         return bot.sendMessage(chatId, '❌ No valid keywords provided!');
       }
       
@@ -1338,7 +1436,7 @@ ${validCategories.map(cat => `• ${cat}`).join('\n')}
       const removedKeywords = [];
       const notFoundKeywords = [];
       
-      for (const keyword of keywords) {
+      for (const keyword of validatedKeywords) {
         try {
           const removed = await new Promise((resolve, reject) => {
             database.db.run(
@@ -1399,9 +1497,8 @@ ${validCategories.map(cat => `• ${cat}`).join('\n')}
     const userId = msg.from.id;
     const category = match[1].trim().toLowerCase();
     
-    const validCategories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
-    if (!validCategories.includes(category)) {
-      return bot.sendMessage(chatId, `❌ Invalid category. Use: ${validCategories.join(', ')}`);
+    if (!validateCategory(category)) {
+      return bot.sendMessage(chatId, `❌ Invalid category. Use: youtubers, bollywood, cricket, national, pakistan`);
     }
     
     try {
@@ -1439,9 +1536,8 @@ Add new keywords with:
     const userId = msg.from.id;
     const category = match[1].trim().toLowerCase();
     
-    const validCategories = ['youtubers', 'bollywood', 'cricket', 'national', 'pakistan'];
-    if (!validCategories.includes(category)) {
-      return bot.sendMessage(chatId, `❌ Invalid category. Use: ${validCategories.join(', ')}`);
+    if (!validateCategory(category)) {
+      return bot.sendMessage(chatId, `❌ Invalid category. Use: youtubers, bollywood, cricket, national, pakistan`);
     }
     
     try {
@@ -1478,9 +1574,7 @@ Add new keywords with:
     }
   });
 
-  // Rest of the commands remain the same but add rate limit handling...
-  
-  // YouTubers command with better error handling
+  // Enhanced YouTubers command with rate limit handling
   bot.onText(/\/youtubers/, async (msg) => {
     const startTime = Date.now();
     const chatId = msg.chat.id;
@@ -1496,7 +1590,7 @@ You can try again in ${rateCheck.resetTime} minutes.
     }
     
     try {
-      await bot.sendMessage(chatId, '🔍 *Searching YouTuber news...*\n⏳ This may take a moment for fresh content.', { parse_mode: 'Markdown' });
+      await bot.sendMessage(chatId, '🔍 *Searching YouTuber news...*\n⏳ Getting fresh content from your keywords.', { parse_mode: 'Markdown' });
       
       const articles = await fetchEnhancedContent('youtubers', userId);
       await formatAndSendNewsMessage(chatId, articles, 'youtubers', bot);
@@ -1506,21 +1600,127 @@ You can try again in ${rateCheck.resetTime} minutes.
       
     } catch (error) {
       console.error('YouTubers error:', error);
-      if (error.message.includes('429') || error.message.includes('rate limit')) {
-        await bot.sendMessage(chatId, `⚠️ *Rate limit hit!*
-
-The news sources are busy. Please wait 2-3 minutes and try again.
-
-*Meanwhile:* Add more keywords with /addkeyword youtubers <keywords>`, { parse_mode: 'Markdown' });
-      } else {
-        await bot.sendMessage(chatId, '❌ Error fetching news. Please try again in a moment.');
-      }
+      const errorMessage = handleRateLimitError(error, 'youtubers');
+      await bot.sendMessage(chatId, errorMessage, { parse_mode: 'Markdown' });
       botStats.errors++;
     }
   });
 
-  // Similar improvements for other category commands...
-  // [Add similar rate limit handling for bollywood, cricket, national, pakistan]
+  // Enhanced Bollywood command
+  bot.onText(/\/bollywood/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    const rateCheck = checkUserRateLimit(userId, 'bollywood');
+    if (!rateCheck.allowed) {
+      return bot.sendMessage(chatId, `⏰ *Rate limit exceeded!*
+
+You can try again in ${rateCheck.resetTime} minutes.`, { parse_mode: 'Markdown' });
+    }
+    
+    try {
+      await bot.sendMessage(chatId, '🔍 *Searching Bollywood news...*\n⏳ Getting fresh content from your keywords.', { parse_mode: 'Markdown' });
+      
+      const articles = await fetchEnhancedContent('bollywood', userId);
+      await formatAndSendNewsMessage(chatId, articles, 'bollywood', bot);
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Bollywood error:', error);
+      const errorMessage = handleRateLimitError(error, 'bollywood');
+      await bot.sendMessage(chatId, errorMessage, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  // Enhanced Cricket command
+  bot.onText(/\/cricket/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    const rateCheck = checkUserRateLimit(userId, 'cricket');
+    if (!rateCheck.allowed) {
+      return bot.sendMessage(chatId, `⏰ *Rate limit exceeded!*
+
+You can try again in ${rateCheck.resetTime} minutes.`, { parse_mode: 'Markdown' });
+    }
+    
+    try {
+      await bot.sendMessage(chatId, '🔍 *Searching Cricket news...*\n⏳ Getting fresh content from your keywords.', { parse_mode: 'Markdown' });
+      
+      const articles = await fetchEnhancedContent('cricket', userId);
+      await formatAndSendNewsMessage(chatId, articles, 'cricket', bot);
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Cricket error:', error);
+      const errorMessage = handleRateLimitError(error, 'cricket');
+      await bot.sendMessage(chatId, errorMessage, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  // Enhanced National command
+  bot.onText(/\/national/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    const rateCheck = checkUserRateLimit(userId, 'national');
+    if (!rateCheck.allowed) {
+      return bot.sendMessage(chatId, `⏰ *Rate limit exceeded!*
+
+You can try again in ${rateCheck.resetTime} minutes.`, { parse_mode: 'Markdown' });
+    }
+    
+    try {
+      await bot.sendMessage(chatId, '🔍 *Searching National news...*\n⏳ Getting fresh content from your keywords.', { parse_mode: 'Markdown' });
+      
+      const articles = await fetchEnhancedContent('national', userId);
+      await formatAndSendNewsMessage(chatId, articles, 'national', bot);
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('National error:', error);
+      const errorMessage = handleRateLimitError(error, 'national');
+      await bot.sendMessage(chatId, errorMessage, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
+
+  // Enhanced Pakistan command
+  bot.onText(/\/pakistan/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    
+    const rateCheck = checkUserRateLimit(userId, 'pakistan');
+    if (!rateCheck.allowed) {
+      return bot.sendMessage(chatId, `⏰ *Rate limit exceeded!*
+
+You can try again in ${rateCheck.resetTime} minutes.`, { parse_mode: 'Markdown' });
+    }
+    
+    try {
+      await bot.sendMessage(chatId, '🔍 *Searching Pakistan news...*\n⏳ Getting fresh content from your keywords.', { parse_mode: 'Markdown' });
+      
+      const articles = await fetchEnhancedContent('pakistan', userId);
+      await formatAndSendNewsMessage(chatId, articles, 'pakistan', bot);
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Pakistan error:', error);
+      const errorMessage = handleRateLimitError(error, 'pakistan');
+      await bot.sendMessage(chatId, errorMessage, { parse_mode: 'Markdown' });
+      botStats.errors++;
+    }
+  });
 
   // Enhanced Stats command
   bot.onText(/\/stats/, async (msg) => {
@@ -1603,60 +1803,14 @@ The news sources are busy. Please wait 2-3 minutes and try again.
     await bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
   });
 
-  console.log('✅ ENHANCED bot commands with multi-keyword support registered!');
+  console.log('✅ COMPLETE ENHANCED bot commands with multi-keyword support and rate limit handling registered!');
 }
 
-// 🔧 ENHANCED RATE LIMIT HANDLING FOR FEEDLY API
-// Replace the existing checkRateLimit function in EnhancedFeedlyAPI class
+// ==========================================
+// PART 4: FINAL SERVER SETUP & CLEANUP - PASTE AT THE END
+// ==========================================
 
-// Add this to EnhancedFeedlyAPI class (replace existing checkRateLimit method)
-/*
-async checkRateLimit() {
-  if (!this.isConfigured) {
-    throw new Error('Feedly not properly configured');
-  }
-
-  const now = Date.now();
-  if (now - feedlyLastReset > 3600000) {
-    feedlyRequestCounter = 0;
-    feedlyLastReset = now;
-  }
-  
-  // Enhanced rate limiting with exponential backoff
-  if (feedlyRequestCounter >= FEEDLY_CONFIG.MAX_REQUESTS_PER_HOUR) {
-    const waitTime = Math.min(30000, 1000 * Math.pow(2, Math.floor(feedlyRequestCounter / 100)));
-    console.log(`⏳ Feedly rate limit reached, waiting ${waitTime/1000}s...`);
-    await new Promise(resolve => setTimeout(resolve, waitTime));
-  }
-  
-  feedlyRequestCounter++;
-  botStats.feedlyRequests++;
-}
-*/
-
-// 🔧 ENHANCED ERROR HANDLING FOR 429 ERRORS
-// Add this function to handle rate limit errors globally
-
-function handleRateLimitError(error, context = 'API') {
-  if (error.message.includes('429') || 
-      error.response?.status === 429 || 
-      error.message.includes('rate limit')) {
-    
-    console.warn(`⚠️ Rate limit hit in ${context}:`, error.message);
-    
-    // Return a user-friendly message
-    return {
-      isRateLimit: true,
-      message: `⚠️ Rate limit reached. Please wait 2-3 minutes and try again.`,
-      waitTime: 180000 // 3 minutes
-    };
-  }
-  
-  return {
-    isRateLimit: false,
-    message: error.message
-  };
-}
+// Find the end of your bot commands section and paste this after it:
 
 // Health check route
 app.get('/health', (req, res) => {
@@ -1666,7 +1820,9 @@ app.get('/health', (req, res) => {
     uptime: Math.floor((Date.now() - botStats.startTime) / 1000),
     botConnected: bot ? true : false,
     feedlyConnected: feedlyAPI.isConfigured,
-    stats: botStats
+    stats: botStats,
+    version: '4.0',
+    features: ['Multi-Keywords', 'Rate Limit Protection', 'Feedly Pro+', 'Fresh Content', 'AI Enhanced']
   };
   res.json(health);
 });
@@ -1677,80 +1833,218 @@ app.get('/', (req, res) => {
     message: 'Viral News Bot API',
     status: 'Running',
     version: '4.0',
-    features: ['Feedly Pro+', 'Fresh Content', 'AI Enhanced']
+    features: ['Feedly Pro+', 'Fresh Content', 'AI Enhanced', 'Multi-Keywords'],
+    bot_status: bot ? 'Connected' : 'Not configured',
+    feedly_status: feedlyAPI.isConfigured ? 'Connected' : 'Not configured',
+    uptime_minutes: Math.floor((Date.now() - botStats.startTime) / 1000 / 60)
   });
 });
 
-// ==========================================
-// 4. SERVER STARTUP - SABSE LAST ME ADD KARO:
-// ==========================================
-
-// Start server
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 App URL: ${APP_URL}`);
-  console.log(`🤖 Bot status: ${bot ? 'Connected' : 'Not configured'}`);
-  console.log(`📡 Feedly status: ${feedlyAPI.isConfigured ? 'Connected' : 'Not configured'}`);
-  console.log(`🔥 Viral News Bot v4.0 started successfully!`);
+// API endpoint for bot statistics (optional)
+app.get('/api/stats', (req, res) => {
+  res.json({
+    ...botStats,
+    uptime_seconds: Math.floor((Date.now() - botStats.startTime) / 1000),
+    feedly_configured: feedlyAPI.isConfigured,
+    rate_limits_active: userRateLimits.size
+  });
 });
-
-// Error handling
-server.on('error', (error) => {
-  console.error('❌ Server error:', error);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-console.log('✅ All systems initialized!');
 
 // Webhook setup for production
 if (isProduction && bot) {
   console.log('🔗 Setting up webhook for production...');
   
+  // Webhook endpoint
   app.post(`/webhook/${BOT_TOKEN}`, (req, res) => {
     try {
       bot.processUpdate(req.body);
       res.sendStatus(200);
     } catch (error) {
-      console.error('Webhook error:', error);
+      console.error('❌ Webhook error:', error);
       res.sendStatus(500);
     }
   });
   
-  // Set webhook
+  // Set webhook URL
   bot.setWebHook(`${APP_URL}/webhook/${BOT_TOKEN}`)
     .then(() => {
       console.log('✅ Webhook set successfully');
+      console.log(`📡 Webhook URL: ${APP_URL}/webhook/${BOT_TOKEN}`);
     })
     .catch((error) => {
       console.error('❌ Webhook setup failed:', error);
     });
 } else if (!isProduction && bot) {
   console.log('🔄 Using polling for development...');
+} else {
+  console.warn('⚠️ Bot not initialized - check BOT_TOKEN');
 }
 
-// 🧹 MEMORY CLEANUP - ADD THIS AFTER WEBHOOK SETUP
-
-// Memory cleanup for rate limits
+// Memory cleanup for rate limits and performance optimization
 setInterval(() => {
   const now = Date.now();
   const oneHour = 3600000;
   
   // Clean rate limits Map
+  let cleanedCount = 0;
   for (const [key, times] of userRateLimits.entries()) {
     const filtered = times.filter(time => now - time < oneHour);
     if (filtered.length === 0) {
       userRateLimits.delete(key);
+      cleanedCount++;
     } else {
       userRateLimits.set(key, filtered);
     }
   }
   
-  console.log(`🧹 Memory cleanup: ${userRateLimits.size} active rate limits`);
+  // Reset Feedly counter if needed
+  if (now - feedlyLastReset > oneHour) {
+    feedlyRequestCounter = 0;
+    feedlyLastReset = now;
+  }
+  
+  console.log(`🧹 Memory cleanup: ${userRateLimits.size} active rate limits, cleaned ${cleanedCount} expired entries`);
 }, 300000); // Every 5 minutes
+
+// Graceful shutdown handling
+function gracefulShutdown(signal) {
+  console.log(`📴 Received ${signal}. Starting graceful shutdown...`);
+  
+  // Stop accepting new requests
+  server.close((err) => {
+    if (err) {
+      console.error('❌ Error during server shutdown:', err);
+      process.exit(1);
+    }
+    
+    console.log('✅ HTTP server closed');
+    
+    // Stop bot polling if in development
+    if (!isProduction && bot) {
+      try {
+        bot.stopPolling();
+        console.log('✅ Bot polling stopped');
+      } catch (error) {
+        console.error('⚠️ Error stopping bot polling:', error);
+      }
+    }
+    
+    // Close database connections
+    if (database && database.db) {
+      database.db.close((err) => {
+        if (err) {
+          console.error('❌ Database close error:', err);
+        } else {
+          console.log('✅ Database closed');
+        }
+        
+        console.log('✅ Graceful shutdown complete');
+        process.exit(0);
+      });
+    } else {
+      console.log('✅ Graceful shutdown complete');
+      process.exit(0);
+    }
+  });
+}
+
+// Enhanced error handling for uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  console.error('Stack trace:', error.stack);
+  
+  // Try to close gracefully, but don't wait too long
+  setTimeout(() => {
+    console.error('💥 Forced exit after uncaught exception');
+    process.exit(1);
+  }, 5000);
+  
+  gracefulShutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise);
+  console.error('Reason:', reason);
+  
+  // For unhandled rejections, we log but don't necessarily exit
+  // unless it's a critical error
+  if (reason && reason.code === 'ECONNREFUSED') {
+    console.error('💥 Critical connection error, shutting down');
+    gracefulShutdown('unhandledRejection');
+  }
+});
+
+// Listen for shutdown signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Start the server
+const server = app.listen(PORT, () => {
+  console.log('🚀 ================================');
+  console.log('🔥 VIRAL NEWS BOT V4.0 STARTED!');
+  console.log('🚀 ================================');
+  console.log(`📡 Server running on port: ${PORT}`);
+  console.log(`🌐 App URL: ${APP_URL}`);
+  console.log(`🤖 Bot status: ${bot ? '🟢 Connected' : '🔴 Not configured'}`);
+  console.log(`📊 Feedly status: ${feedlyAPI.isConfigured ? '🟢 Pro+ Connected' : '🔴 RSS Only Mode'}`);
+  console.log(`⚙️ Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+  console.log(`🕐 Started at: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`);
+  
+  if (!BOT_TOKEN) {
+    console.warn('⚠️ WARNING: BOT_TOKEN not configured!');
+    console.warn('⚠️ Set BOT_TOKEN environment variable to enable bot functionality');
+  }
+  
+  if (!feedlyAPI.isConfigured) {
+    console.warn('⚠️ INFO: Feedly Pro+ not configured - using RSS sources only');
+    console.warn('⚠️ Set FEEDLY_ACCESS_TOKEN and FEEDLY_USER_ID for enhanced features');
+  }
+  
+  console.log('🚀 ================================');
+  console.log('🎯 FEATURES ENABLED:');
+  console.log('✅ Multi-keyword support');
+  console.log('✅ Rate limit protection');
+  console.log('✅ Enhanced error handling');
+  console.log('✅ Fresh content delivery');
+  console.log('✅ RSS + Feedly Pro+ hybrid');
+  console.log('✅ Memory optimization');
+  console.log('✅ Graceful shutdown');
+  console.log('🚀 ================================');
+  console.log('🔥 BOT IS READY TO SERVE USERS!');
+  console.log('🚀 ================================');
+});
+
+// Enhanced server error handling
+server.on('error', (error) => {
+  console.error('❌ Server error:', error);
+  
+  if (error.code === 'EADDRINUSE') {
+    console.error(`💥 Port ${PORT} is already in use!`);
+    console.error('💡 Try a different port or kill the existing process');
+    process.exit(1);
+  } else if (error.code === 'EACCES') {
+    console.error(`💥 Permission denied on port ${PORT}!`);
+    console.error('💡 Try using a port number above 1024');
+    process.exit(1);
+  } else {
+    console.error('💥 Unknown server error, attempting restart...');
+    setTimeout(() => {
+      process.exit(1);
+    }, 1000);
+  }
+});
+
+// Log successful initialization
+console.log('✅ All systems initialized successfully!');
+console.log('🎯 Bot ready to handle multi-keyword news requests!');
+
+// Export for testing (optional)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    app,
+    bot,
+    database,
+    feedlyAPI,
+    botStats
+  };
+}
