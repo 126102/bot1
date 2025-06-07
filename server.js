@@ -313,6 +313,11 @@ async function scrapeRealNews(query, category) {
           const pubDate = $elem.find('pubDate').text().trim() || $elem.find('published').text().trim();
           const description = $elem.find('description').text().trim() || $elem.find('summary').text().trim();
 
+          console.log(`📰 Article: "${title}"`);
+          console.log(`🔍 Looking for: "${query}"`);
+          console.log(`✅ Match: ${title.toLowerCase().includes(query.toLowerCase())}`);
+          console.log(`---`);
+          
           if (title && link && title.length > 10) {
             // EXACT keyword matching - STRICT
             const titleLower = title.toLowerCase();
