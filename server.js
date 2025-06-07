@@ -67,11 +67,7 @@ const ENHANCED_RSS_SOURCES = {
       'https://www.indiatoday.in/rss/1206514',
       'https://news.google.com/rss/search?q=YouTubers+India&hl=en&gl=IN&ceid=IN:en'
     ],
-    feedlyStreams: [
-      'user/YOUR_USER_ID/category/YouTube',
-      'feed/http://feeds.feedburner.com/TechCrunch',
-      'user/YOUR_USER_ID/tag/youtube'
-    ]
+    feedlyStreams: [] // Will be populated dynamically if user has categories
   },
   bollywood: {
     rss: [
@@ -80,10 +76,7 @@ const ENHANCED_RSS_SOURCES = {
       'https://www.indiatoday.in/rss/1206514',
       'https://news.google.com/rss/search?q=Bollywood+scandal&hl=en&gl=IN&ceid=IN:en'
     ],
-    feedlyStreams: [
-      'user/YOUR_USER_ID/category/Bollywood',
-      'user/YOUR_USER_ID/tag/bollywood'
-    ]
+    feedlyStreams: []
   },
   cricket: {
     rss: [
@@ -92,10 +85,7 @@ const ENHANCED_RSS_SOURCES = {
       'https://www.indiatoday.in/rss/1206570',
       'https://news.google.com/rss/search?q=Cricket+India&hl=en&gl=IN&ceid=IN:en'
     ],
-    feedlyStreams: [
-      'user/YOUR_USER_ID/category/Sports',
-      'user/YOUR_USER_ID/tag/cricket'
-    ]
+    feedlyStreams: []
   },
   national: {
     rss: [
@@ -104,10 +94,7 @@ const ENHANCED_RSS_SOURCES = {
       'https://www.indiatoday.in/rss/1206514',
       'https://news.google.com/rss/search?q=India+politics&hl=en&gl=IN&ceid=IN:en'
     ],
-    feedlyStreams: [
-      'user/YOUR_USER_ID/category/India',
-      'user/YOUR_USER_ID/tag/politics'
-    ]
+    feedlyStreams: []
   },
   pakistan: {
     rss: [
@@ -115,10 +102,7 @@ const ENHANCED_RSS_SOURCES = {
       'https://arynews.tv/en/feed/',
       'https://news.google.com/rss/search?q=Pakistan+politics&hl=en&gl=PK&ceid=PK:en'
     ],
-    feedlyStreams: [
-      'user/YOUR_USER_ID/category/Pakistan',
-      'user/YOUR_USER_ID/tag/pakistan'
-    ]
+    feedlyStreams: []
   }
 };
 
@@ -255,20 +239,38 @@ const limiter = rateLimit({
   message: { error: 'Too many requests' }
 });
 app.use('/api/', limiter);
-
 // Enhanced Feedly Pro+ API Class
 class EnhancedFeedlyAPI {
   constructor() {
     this.headers = {
       'Authorization': `Bearer ${FEEDLY_CONFIG.ACCESS_TOKEN}`,
       'Content-Type': 'application/json',
-      'User-Agent': 'ViralNewsBot/3.0'
+      'User-Agent': 'ViralNewsBot/4.0'
     };
     this.rateLimitManager = new Map();
+    this.isConfigured = this.validateConfig();
+  }
+
+  validateConfig() {
+    if (!FEEDLY_CONFIG.ACCESS_TOKEN || FEEDLY_CONFIG.ACCESS_TOKEN === 'undefined') {
+      console.warn('⚠️ Feedly ACCESS_TOKEN not configured');
+      return false;
+    }
+    if (!FEEDLY_CONFIG.USER_ID || FEEDLY_CONFIG.USER_ID === 'undefined') {
+      console.warn('⚠️ Feedly USER_ID not configured');
+      return false;
+    }
+    console.log('✅ Feedly Pro+ configuration validated');
+    return true;
   }
 
   async refreshToken() {
     try {
+      if (!FEEDLY_CONFIG.REFRESH_TOKEN || FEEDLY_CONFIG.REFRESH_TOKEN === 'undefined') {
+        console.warn('⚠️ No refresh token available');
+        return false;
+      }
+
       console.log('🔄 Refreshing Feedly token...');
       const response = await axios.post(`${FEEDLY_CONFIG.BASE_URL}/auth/token`, {
         refresh_token: FEEDLY_CONFIG.REFRESH_TOKEN,
@@ -283,12 +285,16 @@ class EnhancedFeedlyAPI {
       }
       return false;
     } catch (error) {
-      console.error('❌ Feedly token refresh failed:', error.message);
+      console.error('❌ Feedly token refresh failed:', error.response?.data || error.message);
       return false;
     }
   }
 
   checkRateLimit() {
+    if (!this.isConfigured) {
+      throw new Error('Feedly not properly configured');
+    }
+
     const now = Date.now();
     if (now - feedlyLastReset > 3600000) { // Reset every hour
       feedlyRequestCounter = 0;
@@ -304,8 +310,13 @@ class EnhancedFeedlyAPI {
     botStats.feedlyRequests++;
   }
 
-  async searchContent(query, category, count = 50) {
+  async searchContent(query, category, count = 30) {
     try {
+      if (!this.isConfigured) {
+        console.warn('⚠️ Feedly not configured, skipping search');
+        return [];
+      }
+
       this.checkRateLimit();
       
       const queryHash = this.generateQueryHash(query, category);
@@ -320,12 +331,9 @@ class EnhancedFeedlyAPI {
       
       const searchParams = {
         query: query,
-        count: count,
+        count: Math.min(count, 100), // Feedly limit
         newerThan: Date.now() - 86400000, // Last 24 hours
-        locale: 'en',
-        engagement: 'high', // Pro+ feature
-        similarity: 'high', // Pro+ feature
-        duplicates: 'false' // Pro+ feature
+        locale: 'en'
       };
 
       const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/search/contents`, {
@@ -351,56 +359,56 @@ class EnhancedFeedlyAPI {
         }
       }
       
-      console.error(`❌ Feedly search error: ${error.message}`);
+      console.error(`❌ Feedly search error: ${error.response?.data?.errorMessage || error.message}`);
       return [];
     }
   }
 
-  async getStreamContents(streamId, count = 30) {
+  async getUserProfile() {
     try {
+      if (!this.isConfigured) {
+        return null;
+      }
+
       this.checkRateLimit();
       
-      console.log(`📡 Feedly stream: ${streamId}`);
-      
-      const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/streams/contents`, {
+      const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/profile`, {
         headers: this.headers,
-        params: {
-          streamId: streamId,
-          count: count,
-          newerThan: Date.now() - 86400000,
-          ranked: 'newest' // Pro+ feature
-        },
-        timeout: 15000
+        timeout: 10000
       });
       
-      return response.data.items || [];
+      return response.data;
       
     } catch (error) {
-      console.error(`❌ Feedly stream error: ${error.message}`);
-      return [];
+      console.error(`❌ Feedly profile error: ${error.message}`);
+      return null;
     }
   }
 
-  async getTrendingTopics(category) {
+  async getTrendingTopics(category = 'technology') {
     try {
+      if (!this.isConfigured) {
+        console.warn('⚠️ Feedly not configured, skipping trending');
+        return [];
+      }
+
       this.checkRateLimit();
       
       console.log(`📈 Getting trending topics for: ${category}`);
       
-      const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/topics/trending`, {
+      // Use a simpler endpoint that's more likely to work
+      const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/topics`, {
         headers: this.headers,
         params: {
-          category: category,
-          locale: 'en',
           count: 20
         },
         timeout: 10000
       });
       
-      return response.data.topics || [];
+      return response.data || [];
       
     } catch (error) {
-      console.error(`❌ Feedly trending error: ${error.message}`);
+      console.error(`❌ Feedly trending error: ${error.response?.data?.errorMessage || error.message}`);
       return [];
     }
   }
@@ -808,24 +816,28 @@ async function scrapeRealNews(query, category) {
       }
     }
     
-    // Then, enhance with Feedly Pro+ results
+    // Then, enhance with Feedly Pro+ results (only if configured)
     try {
-      console.log(`🤖 Enhancing with Feedly Pro+ for: "${query}"`);
-      const feedlyResults = await feedlyAPI.searchContent(query, category, 30);
-      
-      for (const feedlyArticle of feedlyResults) {
-        const isDuplicate = articles.some(existing => {
-          const existingKey = existing.title.toLowerCase().replace(/[^\w\s]/g, '').substring(0, 30);
-          const feedlyKey = feedlyArticle.title.toLowerCase().replace(/[^\w\s]/g, '').substring(0, 30);
-          return existingKey === feedlyKey || existing.link === feedlyArticle.link;
-        });
+      if (feedlyAPI.isConfigured) {
+        console.log(`🤖 Enhancing with Feedly Pro+ for: "${query}"`);
+        const feedlyResults = await feedlyAPI.searchContent(query, category, 30);
         
-        if (!isDuplicate) {
-          articles.push(feedlyArticle);
+        for (const feedlyArticle of feedlyResults) {
+          const isDuplicate = articles.some(existing => {
+            const existingKey = existing.title.toLowerCase().replace(/[^\w\s]/g, '').substring(0, 30);
+            const feedlyKey = feedlyArticle.title.toLowerCase().replace(/[^\w\s]/g, '').substring(0, 30);
+            return existingKey === feedlyKey || existing.link === feedlyArticle.link;
+          });
+          
+          if (!isDuplicate) {
+            articles.push(feedlyArticle);
+          }
         }
+        
+        console.log(`✅ Feedly added ${feedlyResults.length} unique articles`);
+      } else {
+        console.log(`⚠️ Feedly not configured, using RSS only`);
       }
-      
-      console.log(`✅ Feedly added ${feedlyResults.length} unique articles`);
       
     } catch (feedlyError) {
       console.error(`⚠️ Feedly enhancement failed: ${feedlyError.message}`);
@@ -888,24 +900,8 @@ async function fetchEnhancedContent(category, userId = null) {
         const articles = await scrapeRealNews(userKeyword.keyword, category);
         console.log(`   ✅ Found ${articles.length} matches for: ${userKeyword.keyword}`);
         
-        // Also try Feedly streams if available
-        const sourceConfig = ENHANCED_RSS_SOURCES[category];
-        if (sourceConfig && sourceConfig.feedlyStreams) {
-          try {
-            for (const streamId of sourceConfig.feedlyStreams.slice(0, 2)) {
-              const streamContents = await feedlyAPI.getStreamContents(streamId, 20);
-              const relevantContents = streamContents.filter(item => {
-                const content = `${item.title || ''} ${item.summary?.content || ''}`.toLowerCase();
-                return content.includes(userKeyword.keyword.toLowerCase());
-              });
-              
-              const formattedStream = feedlyAPI.formatResults(relevantContents, userKeyword.keyword, category);
-              articles.push(...formattedStream);
-            }
-          } catch (streamError) {
-            console.warn(`Stream fetch failed: ${streamError.message}`);
-          }
-        }
+        // Skip Feedly streams for now since they require proper configuration
+        // This can be enabled later when user has proper Feedly categories set up
         
         articles.forEach(article => {
           article.searchKeyword = userKeyword.keyword;
@@ -997,7 +993,106 @@ function createFallbackContent(category) {
   }];
 }
 
-// Enhanced message formatting function
+// Command: /trending (Feedly Pro+ exclusive)
+  bot.onText(/\/trending/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const startTime = Date.now();
+    
+    try {
+      if (!feedlyAPI.isConfigured) {
+        await bot.sendMessage(chatId, `❌ *Feedly Pro+ not configured*\n\nTrending topics require Feedly Pro+ setup.\n\nSet these environment variables:\n• FEEDLY_ACCESS_TOKEN\n• FEEDLY_USER_ID\n• FEEDLY_REFRESH_TOKEN`, { parse_mode: 'Markdown' });
+        return;
+      }
+
+      await bot.sendMessage(chatId, `📈 *Getting trending topics with Feedly Pro+...*`, { parse_mode: 'Markdown' });
+      
+      const trendingTopics = await feedlyAPI.getTrendingTopics('technology');
+      
+      if (trendingTopics.length === 0) {
+        await bot.sendMessage(chatId, `❌ No trending topics available right now.\n\nThis might be due to:\n• Feedly API limits\n• Configuration issues\n• Service temporarily unavailable`);
+        return;
+      }
+      
+      let message = `📈 *TRENDING TOPICS (Feedly Pro+)*\n\n`;
+      
+      trendingTopics.slice(0, 15).forEach((topic, index) => {
+        message += `${index + 1}. 🔥 *${topic.label || topic.id}*\n`;
+        if (topic.description) {
+          message += `   📄 ${topic.description.substring(0, 80)}...\n`;
+        }
+        message += `   📊 Interest: ${topic.score || 'N/A'}\n\n`;
+      });
+      
+      message += `🤖 *Powered by Feedly Pro+ AI*`;
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      
+      const responseTime = Date.now() - startTime;
+      try {
+        await database.logAnalytics(userId, 'trending', 'trending', responseTime, 1, 1);
+      } catch (dbError) {
+        console.warn('Analytics failed:', dbError.message);
+      }
+      
+      botStats.totalRequests++;
+      botStats.successfulRequests++;
+      
+    } catch (error) {
+      console.error('Trending command error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching trending topics\n\nError: ${error.message}\n\nTry again later or check Feedly configuration.`);
+      botStats.errors++;
+    }
+  });
+
+  // Command: /feedlystats
+  bot.onText(/\/feedlystats/, async (msg) => {
+    const chatId = msg.chat.id;
+    
+    try {
+      const uptime = Math.floor((Date.now() - botStats.startTime) / 1000 / 60); // minutes
+      const feedlyUsagePercent = botStats.totalRequests > 0 ? Math.round((botStats.feedlyRequests / botStats.totalRequests) * 100) : 0;
+      const remainingRequests = Math.max(0, FEEDLY_CONFIG.MAX_REQUESTS_PER_HOUR - feedlyRequestCounter);
+      const resetTime = Math.max(0, Math.ceil((feedlyLastReset + 3600000 - Date.now()) / 60000));
+      
+      const configStatus = feedlyAPI.isConfigured ? '✅ Configured' : '❌ Not Configured';
+      const tokenStatus = FEEDLY_CONFIG.ACCESS_TOKEN && FEEDLY_CONFIG.ACCESS_TOKEN !== 'undefined' ? '✅ Active' : '❌ Missing';
+      
+      const message = `🤖 *FEEDLY PRO+ STATISTICS*
+
+🔧 *Configuration:*
+• Status: ${configStatus}
+• Access Token: ${tokenStatus}
+• User ID: ${FEEDLY_CONFIG.USER_ID ? '✅ Set' : '❌ Missing'}
+• Refresh Token: ${FEEDLY_CONFIG.REFRESH_TOKEN ? '✅ Set' : '❌ Missing'}
+
+📊 *Current Session:*
+• Total Bot Requests: ${botStats.totalRequests}
+• Feedly API Calls: ${botStats.feedlyRequests}
+• Feedly Usage: ${feedlyUsagePercent}%
+• Success Rate: ${botStats.totalRequests > 0 ? Math.round((botStats.successfulRequests / botStats.totalRequests) * 100) : 0}%
+
+⚡ *Rate Limits:*
+• Remaining This Hour: ${remainingRequests}
+• Reset In: ${resetTime} minutes
+• Max Per Hour: ${FEEDLY_CONFIG.MAX_REQUESTS_PER_HOUR}
+
+🚀 *Performance:*
+• Uptime: ${uptime} minutes
+• Cached Articles: ${newsCache.length}
+• Error Rate: ${botStats.totalRequests > 0 ? Math.round((botStats.errors / botStats.totalRequests) * 100) : 0}%
+
+🎯 *Subscription Level:* ${FEEDLY_CONFIG.SUBSCRIPTION_LEVEL.toUpperCase()}
+
+${!feedlyAPI.isConfigured ? '\n⚠️ *Setup Required:*\nSet FEEDLY_ACCESS_TOKEN, FEEDLY_USER_ID, and FEEDLY_REFRESH_TOKEN environment variables.' : ''}`;
+      
+      await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+      
+    } catch (error) {
+      console.error('Feedly stats error:', error);
+      await bot.sendMessage(chatId, `❌ Error fetching Feedly statistics: ${error.message}`);
+    }
+  });// Enhanced message formatting function
 async function formatAndSendNewsMessage(chatId, articles, category, bot) {
   if (!articles || articles.length === 0) {
     await bot.sendMessage(chatId, `❌ No news found for ${category}!\n\n*Reason:* No keywords added yet.\n\n*Solution:* Add keywords first:\n/addkeyword ${category} <your_keyword>\n\n*Example:* /addkeyword ${category} trending topic`);
