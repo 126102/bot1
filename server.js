@@ -239,6 +239,7 @@ const limiter = rateLimit({
   message: { error: 'Too many requests' }
 });
 app.use('/api/', limiter);
+
 // Enhanced Feedly Pro+ API Class
 class EnhancedFeedlyAPI {
   constructor() {
@@ -329,26 +330,47 @@ class EnhancedFeedlyAPI {
 
       console.log(`🤖 Feedly Pro+ searching: "${query}" in ${category}`);
       
+      // Use the correct Feedly search endpoint
       const searchParams = {
-        query: query,
-        count: Math.min(count, 100), // Feedly limit
-        newerThan: Date.now() - 86400000, // Last 24 hours
+        q: query, // Use 'q' instead of 'query'
+        count: Math.min(count, 100),
         locale: 'en'
       };
 
-      const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/search/contents`, {
+      // Try the global search endpoint first
+      const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/search/feeds`, {
         headers: this.headers,
         params: searchParams,
         timeout: 15000
       });
       
-      const formattedResults = this.formatResults(response.data.results || [], query, category);
-      
-      // Cache results for 30 minutes
-      await database.cacheFeedlyResults(queryHash, category, formattedResults, 30);
-      
-      console.log(`✅ Feedly found ${formattedResults.length} articles for: "${query}"`);
-      return formattedResults;
+      // If we get feeds, we need to get content from those feeds
+      if (response.data.results && response.data.results.length > 0) {
+        console.log(`📡 Found ${response.data.results.length} relevant feeds`);
+        
+        const allArticles = [];
+        
+        // Get content from the most relevant feeds (first 3)
+        for (const feed of response.data.results.slice(0, 3)) {
+          try {
+            const feedContent = await this.getFeedContent(feed.feedId, query, 20);
+            allArticles.push(...feedContent);
+          } catch (feedError) {
+            console.warn(`⚠️ Failed to get content from feed ${feed.title}: ${feedError.message}`);
+          }
+        }
+        
+        const formattedResults = this.formatResults(allArticles, query, category);
+        
+        // Cache results for 30 minutes
+        await database.cacheFeedlyResults(queryHash, category, formattedResults, 30);
+        
+        console.log(`✅ Feedly found ${formattedResults.length} articles for: "${query}"`);
+        return formattedResults;
+      } else {
+        console.log(`🔍 No feeds found for "${query}", trying alternative search...`);
+        return await this.alternativeSearch(query, category);
+      }
       
     } catch (error) {
       if (error.response?.status === 401) {
@@ -360,6 +382,72 @@ class EnhancedFeedlyAPI {
       }
       
       console.error(`❌ Feedly search error: ${error.response?.data?.errorMessage || error.message}`);
+      
+      // Try alternative search method if main search fails
+      return await this.alternativeSearch(query, category);
+    }
+  }
+
+  async getFeedContent(feedId, query, count = 20) {
+    try {
+      this.checkRateLimit();
+      
+      const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/streams/contents`, {
+        headers: this.headers,
+        params: {
+          streamId: feedId,
+          count: count,
+          newerThan: Date.now() - 86400000 // Last 24 hours
+        },
+        timeout: 10000
+      });
+      
+      const items = response.data.items || [];
+      
+      // Filter items that match our query
+      return items.filter(item => {
+        const content = `${item.title || ''} ${item.summary?.content || ''}`.toLowerCase();
+        const queryLower = query.toLowerCase();
+        return content.includes(queryLower) || 
+               queryLower.split(' ').some(word => content.includes(word));
+      });
+      
+    } catch (error) {
+      console.error(`❌ Feed content error: ${error.message}`);
+      return [];
+    }
+  }
+
+  async alternativeSearch(query, category) {
+    try {
+      console.log(`🔄 Trying alternative Feedly search for: "${query}"`);
+      
+      // Use a more basic approach - search through popular feeds
+      const popularFeeds = [
+        'feed/http://feeds.feedburner.com/TechCrunch',
+        'feed/https://www.theverge.com/rss/index.xml',
+        'feed/https://feeds.arstechnica.com/arstechnica/index',
+        'feed/https://www.wired.com/feed/rss'
+      ];
+      
+      const allArticles = [];
+      
+      for (const feedId of popularFeeds) {
+        try {
+          const feedContent = await this.getFeedContent(feedId, query, 15);
+          allArticles.push(...feedContent);
+        } catch (feedError) {
+          console.warn(`⚠️ Alternative feed failed: ${feedError.message}`);
+        }
+      }
+      
+      const formattedResults = this.formatResults(allArticles, query, category);
+      console.log(`✅ Alternative search found ${formattedResults.length} articles`);
+      
+      return formattedResults;
+      
+    } catch (error) {
+      console.error(`❌ Alternative search failed: ${error.message}`);
       return [];
     }
   }
@@ -385,6 +473,66 @@ class EnhancedFeedlyAPI {
     }
   }
 
+  // Simplified search that works with basic Feedly API
+  async simpleSearch(query, category, count = 20) {
+    try {
+      if (!this.isConfigured) {
+        return [];
+      }
+
+      console.log(`🔍 Simple Feedly search for: "${query}"`);
+      
+      // Use the basic streams endpoint with popular feeds
+      const feeds = this.getPopularFeedsByCategory(category);
+      const allArticles = [];
+      
+      for (const feedId of feeds.slice(0, 2)) { // Limit to 2 feeds for speed
+        try {
+          const feedContent = await this.getFeedContent(feedId, query, count);
+          allArticles.push(...feedContent);
+        } catch (error) {
+          console.warn(`⚠️ Feed ${feedId} failed: ${error.message}`);
+        }
+      }
+      
+      return this.formatResults(allArticles, query, category);
+      
+    } catch (error) {
+      console.error(`❌ Simple search error: ${error.message}`);
+      return [];
+    }
+  }
+
+  getPopularFeedsByCategory(category) {
+    const feedMap = {
+      youtubers: [
+        'feed/https://www.tubefilter.com/feed/',
+        'feed/https://socialblade.com/blog/feed'
+      ],
+      bollywood: [
+        'feed/https://www.bollywoodhungama.com/rss/news.xml',
+        'feed/https://www.pinkvilla.com/rss.xml'
+      ],
+      cricket: [
+        'feed/https://www.espncricinfo.com/rss/content/story/feeds/0.xml',
+        'feed/https://www.cricbuzz.com/rss-feed/cricket-news'
+      ],
+      national: [
+        'feed/https://timesofindia.indiatimes.com/rssfeedstopstories.cms',
+        'feed/https://www.thehindu.com/news/national/feeder/default.rss'
+      ],
+      pakistan: [
+        'feed/https://www.dawn.com/feeds/home',
+        'feed/https://arynews.tv/en/feed/'
+      ]
+    };
+    
+    return feedMap[category] || [
+      'feed/http://feeds.feedburner.com/TechCrunch',
+      'feed/https://www.theverge.com/rss/index.xml'
+    ];
+  }
+
   async getTrendingTopics(category = 'technology') {
     try {
       if (!this.isConfigured) {
@@ -394,18 +542,46 @@ class EnhancedFeedlyAPI {
 
       this.checkRateLimit();
       
-      console.log(`📈 Getting trending topics for: ${category}`);
+      console.log(`📈 Getting trending topics...`);
       
-      // Use a simpler endpoint that's more likely to work
-      const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/topics`, {
-        headers: this.headers,
-        params: {
-          count: 20
-        },
-        timeout: 10000
-      });
+      // Try to get trending content from popular streams
+      const trendingStreams = [
+        'feed/http://feeds.feedburner.com/TechCrunch',
+        'feed/https://www.theverge.com/rss/index.xml',
+        'feed/https://techcrunch.com/feed/'
+      ];
       
-      return response.data || [];
+      const allContent = [];
+      
+      for (const streamId of trendingStreams) {
+        try {
+          const response = await axios.get(`${FEEDLY_CONFIG.BASE_URL}/streams/contents`, {
+            headers: this.headers,
+            params: {
+              streamId: streamId,
+              count: 10,
+              newerThan: Date.now() - 86400000
+            },
+            timeout: 10000
+          });
+          
+          const items = response.data.items || [];
+          allContent.push(...items.map(item => ({
+            label: item.title || 'Trending Topic',
+            description: item.summary?.content?.substring(0, 100) || '',
+            score: item.engagement || Math.floor(Math.random() * 100),
+            id: item.id || `topic_${Date.now()}`
+          })));
+          
+        } catch (streamError) {
+          console.warn(`⚠️ Trending stream failed: ${streamError.message}`);
+        }
+      }
+      
+      // Sort by engagement/score and return top items
+      return allContent
+        .sort((a, b) => (b.score || 0) - (a.score || 0))
+        .slice(0, 15);
       
     } catch (error) {
       console.error(`❌ Feedly trending error: ${error.response?.data?.errorMessage || error.message}`);
@@ -820,7 +996,14 @@ async function scrapeRealNews(query, category) {
     try {
       if (feedlyAPI.isConfigured) {
         console.log(`🤖 Enhancing with Feedly Pro+ for: "${query}"`);
-        const feedlyResults = await feedlyAPI.searchContent(query, category, 30);
+        
+        // Try the simple search method first
+        let feedlyResults = await feedlyAPI.simpleSearch(query, category, 20);
+        
+        // If simple search doesn't work, try the main search
+        if (feedlyResults.length === 0) {
+          feedlyResults = await feedlyAPI.searchContent(query, category, 20);
+        }
         
         for (const feedlyArticle of feedlyResults) {
           const isDuplicate = articles.some(existing => {
