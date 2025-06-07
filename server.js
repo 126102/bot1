@@ -35,8 +35,12 @@ const defaultData = {
         keywordsRemoved: 0,
         lastUpdated: null
     },
-    userPreferences: {}
+    rateLimitReset: null
 };
+
+// Rate limit handling
+let isRateLimited = false;
+let rateLimitResetTime = null;
 
 // Load data from file
 async function loadData() {
@@ -66,40 +70,82 @@ function getSections() {
     return ['youtuber', 'movies', 'national', 'pakistan', 'cricket', 'tech', 'entertainment', 'latest'];
 }
 
-// Fetch news from Feedly with strict keyword matching
+// Simple RSS feed search (backup when Feedly rate limited)
+async function searchSimpleRSS(keywords) {
+    try {
+        // Use public RSS feeds as backup
+        const feeds = [
+            'https://feeds.bbci.co.uk/news/rss.xml',
+            'https://rss.cnn.com/rss/edition.rss',
+            'https://feeds.reuters.com/reuters/topNews'
+        ];
+        
+        const articles = [];
+        for (const feed of feeds.slice(0, 1)) { // Limit to 1 feed to avoid rate limits
+            try {
+                const response = await axios.get(feed, { timeout: 5000 });
+                // Basic XML parsing for RSS
+                const items = response.data.match(/<item>([\s\S]*?)<\/item>/g) || [];
+                
+                for (const item of items.slice(0, 5)) {
+                    const title = (item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '').replace(/<!\[CDATA\[(.*?)\]\]>/, '$1');
+                    const link = item.match(/<link>([\s\S]*?)<\/link>/)?.[1] || '';
+                    const description = (item.match(/<description>([\s\S]*?)<\/description>/)?.[1] || '').replace(/<!\[CDATA\[(.*?)\]\]>/, '$1');
+                    
+                    const content = (title + ' ' + description).toLowerCase();
+                    const hasKeyword = keywords.some(keyword => {
+                        const keywordLower = keyword.toLowerCase();
+                        const regex = new RegExp(`\\b${keywordLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                        return regex.test(content);
+                    });
+                    
+                    if (hasKeyword) {
+                        articles.push({
+                            title: title,
+                            alternate: [{ href: link }],
+                            published: Date.now(),
+                            origin: { title: 'RSS Feed' }
+                        });
+                    }
+                }
+            } catch (feedError) {
+                console.log('RSS feed error:', feedError.message);
+            }
+        }
+        
+        return articles;
+    } catch (error) {
+        console.error('RSS search error:', error);
+        return [];
+    }
+}
+
+// Fetch news from Feedly with rate limit handling
 async function fetchFeedlyNews(keywords, section = null) {
     try {
+        // Check if rate limited
+        if (isRateLimited && rateLimitResetTime && Date.now() < rateLimitResetTime) {
+            console.log('Rate limited, using RSS backup...');
+            return await searchSimpleRSS(keywords);
+        }
+
         const headers = {
             'Authorization': `Bearer ${FEEDLY_ACCESS_TOKEN}`,
             'Content-Type': 'application/json'
         };
 
-        // Search for articles using Feedly search API
-        const searchQuery = keywords.join(' OR ');
-        const searchUrl = `${FEEDLY_BASE_URL}/search/feeds`;
-        
-        const searchParams = {
-            query: searchQuery,
-            count: 50,
-            locale: 'en'
-        };
-
-        const searchResponse = await axios.get(searchUrl, {
-            headers,
-            params: searchParams
-        });
-
-        // Get stream entries
+        // Use simpler endpoint to avoid rate limits
         const streamUrl = `${FEEDLY_BASE_URL}/streams/contents`;
         const streamParams = {
             streamId: 'user/' + await getUserId() + '/category/global.all',
-            count: 100,
+            count: 20, // Reduced count
             ranked: 'newest'
         };
 
         const streamResponse = await axios.get(streamUrl, {
             headers,
-            params: streamParams
+            params: streamParams,
+            timeout: 10000
         });
 
         const entries = streamResponse.data.items || [];
@@ -112,15 +158,32 @@ async function fetchFeedlyNews(keywords, section = null) {
 
             return keywords.some(keyword => {
                 const keywordLower = keyword.toLowerCase();
-                // Strict matching - check for whole word matches
                 const regex = new RegExp(`\\b${keywordLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
                 return regex.test(content);
             });
         });
 
-        return filteredEntries.slice(0, 10); // Limit to 10 results
+        // Reset rate limit flag on success
+        isRateLimited = false;
+        rateLimitResetTime = null;
+
+        return filteredEntries.slice(0, 8); // Limit results
     } catch (error) {
         console.error('Feedly API Error:', error.response?.data || error.message);
+        
+        // Handle rate limit
+        if (error.response?.status === 429) {
+            isRateLimited = true;
+            const resetIn = error.response.data?.errorMessage?.match(/reset in (\d+)s/)?.[1];
+            if (resetIn) {
+                rateLimitResetTime = Date.now() + (parseInt(resetIn) * 1000);
+                console.log(`Rate limited for ${resetIn} seconds, switching to RSS backup`);
+            }
+            
+            // Use RSS backup when rate limited
+            return await searchSimpleRSS(keywords);
+        }
+        
         throw new Error('Failed to fetch news from Feedly');
     }
 }
@@ -136,28 +199,26 @@ async function getUserId() {
         return response.data.id;
     } catch (error) {
         console.error('Error getting user ID:', error);
-        return 'user/default';
+        return 'default';
     }
 }
 
 // Format news articles for Telegram
 function formatNewsArticles(articles, section) {
     if (!articles || articles.length === 0) {
-        return `📰 No news found for ${section} section with your keywords.`;
+        return `📰 No news found for ${section} section.`;
     }
 
     let message = `📰 *${section.toUpperCase()} NEWS*\n\n`;
     
     articles.forEach((article, index) => {
         const title = article.title || 'No title';
-        const url = article.alternate?.[0]?.href || article.originId || '#';
-        const published = article.published ? new Date(article.published).toLocaleString() : 'Unknown time';
-        const source = article.origin?.title || 'Unknown source';
+        const url = article.alternate?.[0]?.href || '#';
+        const source = article.origin?.title || 'Unknown';
 
         message += `${index + 1}. *${title}*\n`;
-        message += `🔗 [Read More](${url})\n`;
-        message += `📅 ${published}\n`;
-        message += `📺 Source: ${source}\n\n`;
+        message += `🔗 [Read](${url})\n`;
+        message += `📺 ${source}\n\n`;
     });
 
     return message;
@@ -166,124 +227,83 @@ function formatNewsArticles(articles, section) {
 // Express routes
 app.get('/', (req, res) => {
     res.json({
-        status: 'Feedly Telegram Bot is running!',
+        status: 'Feedly Bot Running!',
         timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        bot: 'Active'
+        rateLimited: isRateLimited
     });
 });
 
-app.get('/status', (req, res) => {
-    res.json({
-        bot: 'Feedly Telegram Bot',
-        status: 'Active',
-        polling: true,
-        timestamp: new Date().toISOString(),
-        sections: getSections()
-    });
-});
-
-// Command handlers
+// Simple Commands
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     const data = await loadData();
     data.stats.totalQueries++;
     await saveData(data);
 
-    const welcomeMessage = `
-🤖 *Welcome to Feedly News Bot!*
+    const welcomeMessage = `🤖 *Feedly News Bot*
 
-This bot fetches fresh news from Feedly Pro with strict keyword matching.
+*Quick Commands:*
+/add [section] [keywords] - Add keywords
+/remove [section] [keyword] - Remove keyword
+/list - Show keywords
+/clear [section] - Clear section
+/get [section] - Get news
+/help - Commands guide
 
-*Available Sections:*
-📺 youtuber - YouTube related news
-🎬 movies - Movie news and updates  
-🇮🇳 national - National news
-🇵🇰 pakistan - Pakistan related news
-🏏 cricket - Cricket news and scores
-💻 tech - Technology news
-🎭 entertainment - Entertainment news
-🔥 latest - All sections combined
+*Sections:* youtuber, movies, national, pakistan, cricket, tech, entertainment, latest
 
-*Commands:*
-/addkeyword [section] [keyword] - Add keyword to section
-/removekeyword [section] [keyword] - Remove keyword
-/listkeywords - Show all keywords by section
-/getnews [section] - Fetch fresh news for section
-/stats - Show bot statistics  
-/clearkeywords [section] - Clear all keywords from section
-/help - Show this help message
-
-*Example:*
-\`/addkeyword cricket virat kohli\`
-\`/getnews cricket\`
-\`/removekeyword cricket virat kohli\`
-
-Start by adding keywords to your preferred sections! 🚀
-    `;
+*Examples:*
+\`/add cricket virat kohli\`
+\`/add cricket virat,kohli,rohit\` (multiple)
+\`/get cricket\`
+\`/get latest\` (all news)`;
 
     bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/help/, async (msg) => {
     const chatId = msg.chat.id;
-    const data = await loadData();
-    data.stats.totalQueries++;
-    await saveData(data);
+    const helpMessage = `🆘 *Simple Commands*
 
-    const helpMessage = `
-🆘 *HELP - Feedly News Bot Commands*
+*Add Keywords:*
+/add cricket virat kohli
+/add movies bollywood,hollywood
+/add youtuber mr beast,pewdiepie
 
-*Keyword Management:*
-📝 \`/addkeyword [section] [keyword]\` - Add keyword
-❌ \`/removekeyword [section] [keyword]\` - Remove keyword  
-📋 \`/listkeywords\` - List all keywords
-🗑️ \`/clearkeywords [section]\` - Clear section keywords
+*Manage:*
+/remove cricket virat
+/list - Show all keywords
+/clear cricket - Clear section
 
-*News Fetching:*
-📰 \`/getnews [section]\` - Get news for section
-📰 \`/getnews latest\` - Get news from all sections
+*Get News:*
+/get cricket - Section news
+/get latest - All news
 
-*Information:*
-📊 \`/stats\` - Bot statistics
-🆘 \`/help\` - This help message
+*Info:*
+/stats - Statistics
+/help - This guide
 
-*Available Sections:*
-youtuber, movies, national, pakistan, cricket, tech, entertainment
-
-*Examples:*
-\`/addkeyword cricket "india vs pakistan"\`
-\`/addkeyword youtuber "mr beast"\`
-\`/getnews cricket\`
-\`/removekeyword movies "bollywood"\`
-\`/clearkeywords tech\`
-
-*Note:* Keywords are matched strictly (exact word matching).
-    `;
+*Sections:* youtuber, movies, national, pakistan, cricket, tech, entertainment`;
 
     bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
 });
 
-bot.onText(/\/addkeyword (.+)/, async (msg, match) => {
+// Add keywords (multiple support)
+bot.onText(/\/add (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const input = match[1].trim();
     const parts = input.split(' ');
     
     if (parts.length < 2) {
-        bot.sendMessage(chatId, '❌ Usage: /addkeyword [section] [keyword]\nExample: /addkeyword cricket "virat kohli"');
+        bot.sendMessage(chatId, '❌ Usage: /add [section] [keywords]\n\nExamples:\n/add cricket virat kohli\n/add cricket virat,kohli,rohit');
         return;
     }
 
     const section = parts[0].toLowerCase();
-    const keyword = parts.slice(1).join(' ').replace(/"/g, '');
+    const keywordsInput = parts.slice(1).join(' ');
 
-    if (!getSections().includes(section) && section !== 'latest') {
-        bot.sendMessage(chatId, `❌ Invalid section. Available: ${getSections().join(', ')}`);
-        return;
-    }
-
-    if (section === 'latest') {
-        bot.sendMessage(chatId, '❌ Cannot add keywords to "latest" section. Use specific sections only.');
+    if (!getSections().includes(section) || section === 'latest') {
+        bot.sendMessage(chatId, `❌ Invalid section. Use: ${getSections().filter(s => s !== 'latest').join(', ')}`);
         return;
     }
 
@@ -293,64 +313,76 @@ bot.onText(/\/addkeyword (.+)/, async (msg, match) => {
         data.keywords[section] = [];
     }
 
-    if (!data.keywords[section].includes(keyword)) {
-        data.keywords[section].push(keyword);
-        data.stats.keywordsAdded++;
-        data.stats.lastUpdated = new Date().toISOString();
-        await saveData(data);
-        
-        bot.sendMessage(chatId, `✅ Added keyword "${keyword}" to ${section} section.\nTotal keywords in ${section}: ${data.keywords[section].length}`);
+    // Parse multiple keywords
+    let keywords = [];
+    if (keywordsInput.includes(',')) {
+        // Comma separated: virat,kohli,rohit
+        keywords = keywordsInput.split(',').map(k => k.trim()).filter(k => k.length > 0);
     } else {
-        bot.sendMessage(chatId, `⚠️ Keyword "${keyword}" already exists in ${section} section.`);
+        // Space separated or single keyword
+        keywords = [keywordsInput.trim()];
     }
+
+    let addedCount = 0;
+    let existingCount = 0;
+    
+    for (const keyword of keywords) {
+        if (keyword && !data.keywords[section].includes(keyword)) {
+            data.keywords[section].push(keyword);
+            addedCount++;
+            data.stats.keywordsAdded++;
+        } else if (keyword) {
+            existingCount++;
+        }
+    }
+
+    data.stats.lastUpdated = new Date().toISOString();
+    await saveData(data);
+    
+    let response = `✅ Added ${addedCount} keyword(s) to ${section}`;
+    if (existingCount > 0) {
+        response += `\n⚠️ ${existingCount} already existed`;
+    }
+    response += `\nTotal in ${section}: ${data.keywords[section].length}`;
+    
+    bot.sendMessage(chatId, response);
 });
 
-bot.onText(/\/removekeyword (.+)/, async (msg, match) => {
+// Remove keyword
+bot.onText(/\/remove (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const input = match[1].trim();
     const parts = input.split(' ');
     
     if (parts.length < 2) {
-        bot.sendMessage(chatId, '❌ Usage: /removekeyword [section] [keyword]\nExample: /removekeyword cricket "virat kohli"');
+        bot.sendMessage(chatId, '❌ Usage: /remove [section] [keyword]');
         return;
     }
 
     const section = parts[0].toLowerCase();
-    const keyword = parts.slice(1).join(' ').replace(/"/g, '');
-
-    if (!getSections().includes(section)) {
-        bot.sendMessage(chatId, `❌ Invalid section. Available: ${getSections().filter(s => s !== 'latest').join(', ')}`);
-        return;
-    }
+    const keyword = parts.slice(1).join(' ');
 
     const data = await loadData();
     
-    if (!data.keywords[section]) {
-        bot.sendMessage(chatId, `❌ No keywords found in ${section} section.`);
+    if (!data.keywords[section] || !data.keywords[section].includes(keyword)) {
+        bot.sendMessage(chatId, `❌ Keyword "${keyword}" not found in ${section}`);
         return;
     }
 
-    const index = data.keywords[section].indexOf(keyword);
-    if (index > -1) {
-        data.keywords[section].splice(index, 1);
-        data.stats.keywordsRemoved++;
-        data.stats.lastUpdated = new Date().toISOString();
-        await saveData(data);
-        
-        bot.sendMessage(chatId, `✅ Removed keyword "${keyword}" from ${section} section.\nRemaining keywords: ${data.keywords[section].length}`);
-    } else {
-        bot.sendMessage(chatId, `❌ Keyword "${keyword}" not found in ${section} section.`);
-    }
+    data.keywords[section] = data.keywords[section].filter(k => k !== keyword);
+    data.stats.keywordsRemoved++;
+    data.stats.lastUpdated = new Date().toISOString();
+    await saveData(data);
+    
+    bot.sendMessage(chatId, `✅ Removed "${keyword}" from ${section}\nRemaining: ${data.keywords[section].length}`);
 });
 
-bot.onText(/\/listkeywords/, async (msg) => {
+// List keywords
+bot.onText(/\/list/, async (msg) => {
     const chatId = msg.chat.id;
     const data = await loadData();
-    data.stats.totalQueries++;
-    await saveData(data);
 
-    let message = '📋 *KEYWORDS BY SECTION*\n\n';
-    
+    let message = '📋 *Keywords*\n\n';
     const sections = getSections().filter(s => s !== 'latest');
     let hasKeywords = false;
 
@@ -358,54 +390,56 @@ bot.onText(/\/listkeywords/, async (msg) => {
         const keywords = data.keywords[section] || [];
         if (keywords.length > 0) {
             hasKeywords = true;
-            message += `*${section.toUpperCase()}* (${keywords.length}):\n`;
-            keywords.forEach((keyword, index) => {
-                message += `  ${index + 1}. ${keyword}\n`;
-            });
-            message += '\n';
+            message += `*${section}* (${keywords.length}):\n${keywords.join(', ')}\n\n`;
         }
     });
 
     if (!hasKeywords) {
-        message += '❌ No keywords added yet.\n\nUse /addkeyword [section] [keyword] to add keywords.';
+        message += 'No keywords yet.\nUse: /add [section] [keywords]';
     }
 
     bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
 });
 
-bot.onText(/\/clearkeywords (.+)/, async (msg, match) => {
+// Clear section
+bot.onText(/\/clear (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const section = match[1].trim().toLowerCase();
 
     if (!getSections().includes(section) || section === 'latest') {
-        bot.sendMessage(chatId, `❌ Invalid section. Available: ${getSections().filter(s => s !== 'latest').join(', ')}`);
+        bot.sendMessage(chatId, `❌ Invalid section`);
         return;
     }
 
     const data = await loadData();
-    const keywordCount = data.keywords[section] ? data.keywords[section].length : 0;
+    const count = data.keywords[section] ? data.keywords[section].length : 0;
     
     data.keywords[section] = [];
-    data.stats.keywordsRemoved += keywordCount;
-    data.stats.lastUpdated = new Date().toISOString();
+    data.stats.keywordsRemoved += count;
     await saveData(data);
 
-    bot.sendMessage(chatId, `🗑️ Cleared all ${keywordCount} keywords from ${section} section.`);
+    bot.sendMessage(chatId, `🗑️ Cleared ${count} keywords from ${section}`);
 });
 
-bot.onText(/\/getnews (.+)/, async (msg, match) => {
+// Get news
+bot.onText(/\/get (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const section = match[1].trim().toLowerCase();
 
     if (!getSections().includes(section)) {
-        bot.sendMessage(chatId, `❌ Invalid section. Available: ${getSections().join(', ')}`);
+        bot.sendMessage(chatId, `❌ Invalid section. Use: ${getSections().join(', ')}`);
         return;
     }
 
     const data = await loadData();
     data.stats.totalQueries++;
 
-    bot.sendMessage(chatId, '🔄 Fetching fresh news from Feedly... Please wait.');
+    // Rate limit warning
+    if (isRateLimited) {
+        bot.sendMessage(chatId, '⚠️ Feedly rate limited. Using backup RSS feeds...');
+    } else {
+        bot.sendMessage(chatId, '🔄 Fetching news...');
+    }
 
     try {
         let allArticles = [];
@@ -421,39 +455,24 @@ bot.onText(/\/getnews (.+)/, async (msg, match) => {
             const keywords = data.keywords[sec] || [];
             if (keywords.length > 0) {
                 const articles = await fetchFeedlyNews(keywords, sec);
-                if (section === 'latest') {
-                    allArticles = allArticles.concat(articles.map(article => ({...article, section: sec})));
-                } else {
-                    allArticles = articles;
-                }
+                allArticles = allArticles.concat(articles);
             }
-        }
-
-        if (section === 'latest') {
-            // Sort by published date for latest
-            allArticles.sort((a, b) => (b.published || 0) - (a.published || 0));
-            allArticles = allArticles.slice(0, 15); // Limit to 15 for latest
         }
 
         await saveData(data);
 
         if (allArticles.length === 0) {
-            const noNewsMessage = section === 'latest' 
-                ? '📰 No news found across all sections. Add keywords first using /addkeyword command.'
-                : `📰 No news found for ${section}. Try adding more keywords with /addkeyword ${section} [keyword]`;
-            
-            bot.sendMessage(chatId, noNewsMessage);
+            bot.sendMessage(chatId, `📰 No news found for ${section}.\nAdd keywords: /add ${section} [keywords]`);
             return;
         }
 
         const formattedNews = formatNewsArticles(allArticles, section);
         
-        // Split message if too long for Telegram
         if (formattedNews.length > 4096) {
             const chunks = formattedNews.match(/[\s\S]{1,4000}/g) || [];
             for (const chunk of chunks) {
                 await bot.sendMessage(chatId, chunk, { parse_mode: 'Markdown' });
-                await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+                await new Promise(resolve => setTimeout(resolve, 1000));
             }
         } else {
             bot.sendMessage(chatId, formattedNews, { parse_mode: 'Markdown' });
@@ -461,39 +480,34 @@ bot.onText(/\/getnews (.+)/, async (msg, match) => {
 
     } catch (error) {
         console.error('Error fetching news:', error);
-        bot.sendMessage(chatId, '❌ Error fetching news from Feedly. Please check your API token and try again.');
+        bot.sendMessage(chatId, '❌ Error fetching news. Try again later.');
     }
 });
 
+// Stats
 bot.onText(/\/stats/, async (msg) => {
     const chatId = msg.chat.id;
     const data = await loadData();
-    data.stats.totalQueries++;
-    await saveData(data);
 
     const totalKeywords = Object.values(data.keywords).reduce((sum, keywords) => sum + keywords.length, 0);
-    const lastUpdated = data.stats.lastUpdated ? new Date(data.stats.lastUpdated).toLocaleString() : 'Never';
+    const rateLimitStatus = isRateLimited ? '🔴 Rate Limited' : '🟢 Active';
 
-    const statsMessage = `
-📊 *BOT STATISTICS*
+    const statsMessage = `📊 *Bot Stats*
 
-🔢 Total Queries: ${data.stats.totalQueries}
-➕ Keywords Added: ${data.stats.keywordsAdded}
-➖ Keywords Removed: ${data.stats.keywordsRemoved}
-📝 Total Active Keywords: ${totalKeywords}
-⏰ Last Updated: ${lastUpdated}
+🔢 Queries: ${data.stats.totalQueries}
+➕ Added: ${data.stats.keywordsAdded}
+➖ Removed: ${data.stats.keywordsRemoved}
+📝 Total Keywords: ${totalKeywords}
+🔗 Feedly Status: ${rateLimitStatus}
 
-*Keywords by Section:*
+*By Section:*
 📺 YouTuber: ${data.keywords.youtuber?.length || 0}
 🎬 Movies: ${data.keywords.movies?.length || 0}
 🇮🇳 National: ${data.keywords.national?.length || 0}
 🇵🇰 Pakistan: ${data.keywords.pakistan?.length || 0}
 🏏 Cricket: ${data.keywords.cricket?.length || 0}
 💻 Tech: ${data.keywords.tech?.length || 0}
-🎭 Entertainment: ${data.keywords.entertainment?.length || 0}
-
-Bot is running smoothly! 🚀
-    `;
+🎭 Entertainment: ${data.keywords.entertainment?.length || 0}`;
 
     bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
 });
@@ -503,8 +517,8 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
 
-    if (text && text.startsWith('/') && !text.match(/\/(start|help|addkeyword|removekeyword|listkeywords|clearkeywords|getnews|stats)/)) {
-        bot.sendMessage(chatId, '❌ Unknown command. Use /help to see available commands.');
+    if (text && text.startsWith('/') && !text.match(/\/(start|help|add|remove|list|clear|get|stats)/)) {
+        bot.sendMessage(chatId, '❌ Unknown command. Use /help');
     }
 });
 
@@ -519,20 +533,9 @@ bot.on('polling_error', (error) => {
 
 // Start Express server
 app.listen(PORT, () => {
-    console.log(`🌐 Web server running on port ${PORT}`);
-    console.log('🤖 Feedly Telegram Bot is starting...');
+    console.log(`🌐 Server running on port ${PORT}`);
+    console.log('🤖 Bot started successfully!');
     console.log('📡 Polling for messages...');
-});
-
-// Keep the process alive
-process.on('SIGINT', () => {
-    console.log('🛑 Bot stopped gracefully');
-    process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-    console.log('🛑 Bot terminated gracefully');
-    process.exit(0);
 });
 
 module.exports = { bot, app };
